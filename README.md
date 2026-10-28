@@ -12,7 +12,7 @@ Página única (HTML, sem dependências) para a loja de camisetas de anime e ser
 
 ## Script do Photoshop
 
-1. Copie `photoshop/Enviar para a ficha.jsx` para a pasta `Presets\Scripts` do Photoshop (ex.: `C:\Program Files\Adobe\Adobe Photoshop 2025\Presets\Scripts`) e reinicie — ou use **Arquivo → Scripts → Procurar…**.
+1. Copie `photoshop/Enviar para a ficha.jsx` para a pasta `Presets\Scripts` do Photoshop (ex.: `C:\Program Files\Adobe\Adobe Photoshop 2020\Presets\Scripts`) e reinicie — ou use **Arquivo → Scripts → Procurar…**.
 2. Com a arte separada aberta, rode **Arquivo → Scripts → Enviar para a ficha** e salve o `.ficha.json`.
 3. Na ficha: **Produtos → Estampas → + Do Photoshop**.
 

@@ -13,15 +13,25 @@ comum e podem ser implementadas por nós. O `.json` de tintas extraído do BBOXC
 
 ## Arquitetura
 
-- **Plugin UXP** (formato atual da Adobe; CEP está sendo descontinuado). Photoshop 2026 (27.x).
-  Manifest v5, painel em HTML/JS, operações do Photoshop via `batchPlay` e `imaging` API.
+Alvo: **Photoshop 2020 (v21.0)**, o que a loja usa. Plugins UXP só existem a partir do Photoshop 2021
+(v22), então o plugin é uma **extensão CEP** (painel HTML/JS, CSXS 9) + **ExtendScript** (`.jsx`),
+o mesmo formato do BBOXSTAMP. Deve funcionar também nas versões mais novas (manifest com faixa
+`[21.0,99.9]`). O `PlayerDebugMode` já está ligado no PC (CSXS 8–12), então a extensão sem
+assinatura carrega direto da pasta `%APPDATA%\Adobe\CEP\extensions`.
+
+- **Painel CEP**: interface, receitas e o motor rodam no navegador embutido (Chromium do CEP, com
+  Node.js habilitado para ler/gravar arquivos temporários).
+- **ExtendScript**: só o que exige o Photoshop — exportar os pixels da arte para um PNG temporário,
+  criar canais de cor especial a partir das máscaras que o motor devolve, converter canais em
+  retícula com o meio-tom nativo do Photoshop (Bitmap → Halftone Screen), gerar e salvar fotolitos.
+  Fluxo de pixels: Photoshop → PNG temporário → motor (canvas) → PNGs de máscara → Photoshop.
 - **Motor de separação em JavaScript puro** (`motor/`), separado do Photoshop: recebe pixels RGBA e
   devolve os canais (0–255 de tinta) por cor. É a diferença principal em relação ao BBOXSTAMP, que
   encadeia comandos gravados do Photoshop:
   - parâmetros ajustáveis e salvos como **receitas** da loja;
   - testável fora do Photoshop (Node, imagens de teste, testes automatizados);
   - o mesmo motor pode rodar na ficha para pré-visualizar a separação no mockup.
-- **Plugin = casca fina**: lê os pixels do documento, chama o motor, grava os canais de cor especial
+- **Extensão = casca fina**: lê os pixels do documento, chama o motor, grava os canais de cor especial
   com a cor/fórmula certa, gera fotolitos e envia para a ficha (formato `ficha-photoshop` já existente).
 
 ## Perfil da loja (respostas de 28/10/2026)
@@ -58,8 +68,8 @@ comum e podem ser implementadas por nós. O `.json` de tintas extraído do BBOXC
 ## Como testar
 
 - Motor: `node` com imagens de teste em `motor/testes/` (sem Photoshop).
-- Plugin: instalar pelo **UXP Developer Tool** (Creative Cloud → Apps → UXP Developer Tools)
-  carregando a pasta do plugin; depois empacotar `.ccx` para instalar com duplo clique.
+- Extensão: copiar a pasta para `%APPDATA%\Adobe\CEP\extensions\` e reiniciar o Photoshop 2020;
+  aparece em **Janela → Extensões**. Erros do painel: depuração remota do CEP via arquivo `.debug`.
 - Qualidade da separação: provas impressas na bancada; ajustes viram receitas salvas.
 
 ## Em aberto
