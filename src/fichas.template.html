@@ -121,11 +121,19 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .badge.frente{background:#e3ecf7;color:#2b5b93}
 .badge.costas{background:#efe5f6;color:#6a3a8c}
 .art-bd{padding:12px 10px;display:grid;gap:12px;border-top:1px solid var(--line)}
-.cores{width:100%;border-collapse:collapse}
-.cores td,.cores th{padding:3px 4px;text-align:left;font-size:12px}
-.cores th{color:var(--muted);font-weight:500}
-.cores td:first-child{width:44px}
-.cores td:last-child{width:30px}
+.cor-row{border-bottom:1px solid var(--line);padding:7px 0;display:grid;gap:5px}
+.cor-l1{display:grid;grid-template-columns:38px minmax(0,1fr) 80px 118px auto;gap:5px;align-items:center}
+.cor-l2{display:flex;gap:6px;align-items:center}
+.cor-l2 .n{width:38px;flex:none;text-align:center;font-size:12px;color:var(--muted)}
+.cor-l2 select{flex:1}
+.ord{display:flex}
+.x:disabled{opacity:.25;cursor:default;background:transparent;color:var(--muted)}
+.film{width:36px;height:36px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:4px;flex:none}
+.sw-box{width:38px;height:30px;border:1px solid var(--line);border-radius:6px;display:inline-block}
+.fcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.fcard{border:1px solid var(--line);border-radius:9px;padding:10px;display:grid;gap:8px}
+.fcard .ftop{display:flex;gap:8px;align-items:center}
+.fcard .sw-big{width:44px;height:44px;border-radius:8px;border:1px solid var(--line);flex:none}
 
 .tbl{width:100%;border-collapse:collapse}
 .tbl th,.tbl td{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:middle}
@@ -183,6 +191,10 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .pf .sign{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:22px;font-size:9pt}
 .pf .sign div{border-top:1px solid #333;padding-top:3px}
 .pf .art-blk{break-inside:avoid;margin-bottom:6px}
+.pf .films{display:flex;flex-wrap:wrap;gap:6px}
+.pf .films figure{margin:0;text-align:center;font-size:8pt}
+.pf .films img{height:22mm;max-width:30mm;object-fit:contain;border:1px solid #bbb;background:#fff;display:block}
+.pf small{color:#555}
 .pf .mk .lbl{font-size:8pt}
 </style>
 </head>
@@ -193,6 +205,7 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
     <nav class="tabs" id="tabs">
       <button data-tab="produtos">Produtos</button>
       <button data-tab="modelos">Modelos de camiseta</button>
+      <button data-tab="tintas">Tintas</button>
       <button data-tab="insumos">Insumos</button>
       <button data-tab="config">Configurações</button>
     </nav>
@@ -227,6 +240,33 @@ const CATS = ["Etiqueta de marca", "Etiqueta de composição", "Tag", "Embalagem
 const STATUS = ["Rascunho", "Aprovado", "Em produção", "Arquivado"];
 const LADOS = { frente: "Frente", costas: "Costas" };
 
+/* ================= cor (sRGB ↔ CIE Lab, D65) ================= */
+function hex2rgb(h) {
+  h = String(h || "#999").replace("#", "");
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  const n = parseInt(h, 16) || 0;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgb2lab([r, g, b]) {
+  const lin = c => { c /= 255; return c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92; };
+  const R = lin(r), G = lin(g), B = lin(b);
+  const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  const X = f((R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047), Y = f(R * 0.2126 + G * 0.7152 + B * 0.0722), Z = f((R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883);
+  return { L: 116 * Y - 16, a: 500 * (X - Y), b: 200 * (Y - Z) };
+}
+function lab2hex({ L, a, b }) {
+  let y = (L + 16) / 116, x = a / 500 + y, z = y - b / 200;
+  const f = t => { const t3 = t * t * t; return t3 > 0.008856 ? t3 : (t - 16 / 116) / 7.787; };
+  x = 0.95047 * f(x); y = f(y); z = 1.08883 * f(z);
+  const c = v => { v = v > 0.0031308 ? 1.055 * Math.pow(v, 1 / 2.4) - 0.055 : 12.92 * v; return Math.max(0, Math.min(255, Math.round(v * 255))); };
+  return "#" + [c(x * 3.2406 - y * 1.5372 - z * 0.4986), c(-x * 0.9689 + y * 1.8758 + z * 0.0415), c(x * 0.0557 - y * 0.2040 + z * 1.0570)].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+const dE = (p, q) => Math.hypot(p.L - q.L, p.a - q.a, p.b - q.b);
+const labTxt = o => `L ${r1(o.L)} · a ${r1(o.a)} · b ${r1(o.b)}`;
+const CORES_NOME = [[/vermelh/i, "#d0312d"], [/amarel/i, "#f2c500"], [/verde/i, "#2e9e4f"], [/cian/i, "#00a0d6"], [/azul/i, "#1f4fbf"], [/magenta/i, "#d6177a"],
+  [/laranja/i, "#f07a1a"], [/pret|black/i, "#111111"], [/branc|white/i, "#ffffff"], [/cinza|gr[ae]y/i, "#8a8a8a"], [/pele/i, "#e8b48f"], [/marrom/i, "#6b4226"], [/violeta|roxo/i, "#6a3d9a"]];
+const corPorNome = n => (CORES_NOME.find(([re]) => re.test(n)) || [0, "#999999"])[1];
+
 /* ================= dados de exemplo ================= */
 const SEED_COSTAS = "__COSTAS__";
 const SEED_FRENTE = "__FRENTE__";
@@ -253,7 +293,8 @@ function seedState() {
   const chest = demoArt("S", 400, 440, ["#ffffff", "#c8372a"]);
   return {
     version: 1, savedAt: 0,
-    config: { loja: "Minha loja", custoTela: 35, custoTintaCor: 0.8, maoDeObra: 3, taxasPct: 18, margemAlvoPct: 40 },
+    config: { loja: "Minha loja", custoTela: 35, custoTintaCor: 0.8, maoDeObra: 3, taxasPct: 18, margemAlvoPct: 40, consumoG: 6, perdaPct: 15 },
+    tintas: [], formulas: [],
     blanks: [{
       id: blankId, nome: "Oversized preta", fornecedor: "", cor: "Preta", composicao: "100% algodão", gramatura: "",
       custo: 28, refTam: "M",
@@ -287,6 +328,23 @@ const ui = { tab: "produtos", productId: null, lado: "costas", tam: null, guides
 const cur = () => state.products.find(p => p.id === ui.productId);
 const blankOf = p => state.blanks.find(b => b.id === p?.blankId);
 const insumoOf = id => state.insumos.find(i => i.id === id);
+const formulaOf = id => id ? state.formulas.find(f => f.id === id) : null;
+const compsTxt = comps => comps.map(x => `${fmtCm(x.p)}% ${x.nome.replace(/^[A-Z]?\d+\s*-\s*/, "")}`).join(" + ");
+function matchFormula(lab, max = 6) {
+  let best = null;
+  for (const f of state.formulas) { const d = dE(lab, f); if (d < max && (!best || d < best.d)) best = { f, d }; }
+  return best?.f || null;
+}
+// gramas de tinta de uma cor para a tiragem inteira (consumo × peças × perda)
+const gramasCor = p => num(state.config.consumoG) * Math.max(1, num(p.tiragem)) * (1 + num(state.config.perdaPct) / 100);
+function custoCorPeca(c) {
+  const f = formulaOf(c.formulaId);
+  if (f) {
+    const porKg = f.comps.reduce((s, x) => s + x.p / 100 * num(state.tintas.find(t => t.nome === x.nome)?.custoKg), 0);
+    if (porKg > 0) return num(state.config.consumoG) / 1000 * porKg;
+  }
+  return num(state.config.custoTintaCor);
+}
 
 function target(s) {
   const [t, a, b] = s.split(":");
@@ -301,6 +359,9 @@ function target(s) {
     case "tam": return state.blanks.find(x => x.id === a)?.tamanhos[+b];
     case "view": return state.blanks.find(x => x.id === a)?.views[b];
     case "ins": return state.insumos.find(x => x.id === a);
+    case "form": return state.formulas.find(x => x.id === a);
+    case "fcomp": return state.formulas.find(x => x.id === a)?.comps[+b];
+    case "tb": return state.tintas.find(x => x.id === a);
   }
 }
 function getF(o, k) { return k === "hCm" ? r1(o.wCm * o.ar) : o[k]; }
@@ -350,7 +411,8 @@ function renderStatus(mode) {
 function loadState(s) {
   if (!s || !Array.isArray(s.products)) throw new Error("Arquivo inválido");
   state = s;
-  state.config ??= seedState().config;
+  state.config = { ...seedState().config, ...state.config };
+  state.tintas ??= []; state.formulas ??= [];
   ui.productId = state.products[0]?.id || null; ui.blankId = state.blanks[0]?.id || null; ui.selArt = null;
 }
 async function connectNew() {
@@ -470,7 +532,8 @@ function custos(p) {
   const telas = cores;
   const linhas = [
     ["Camiseta lisa" + (b ? ` (${b.nome})` : ""), b ? num(b.custo) : 0],
-    [`Tinta (${cores} ${cores === 1 ? "cor" : "cores"} × ${brl(c.custoTintaCor)})`, cores * num(c.custoTintaCor)],
+    [`Tinta (${cores} ${cores === 1 ? "cor" : "cores"}${p.estampas.some(a => a.cores.some(x => formulaOf(x.formulaId))) ? ", com fórmulas" : ` × ${brl(c.custoTintaCor)}`})`,
+      p.estampas.reduce((s, a) => s + a.cores.reduce((t, x) => t + custoCorPeca(x), 0) + (a.baseBranca ? num(c.custoTintaCor) : 0), 0)],
     [`Telas (${telas} × ${brl(c.custoTela)} ÷ ${p.tiragem || 1} peças)`, telas * num(c.custoTela) / Math.max(1, num(p.tiragem) || 1)],
     ["Insumos (etiquetas, embalagem…)", p.insumos.reduce((s, i) => s + (insumoOf(i.id) ? num(insumoOf(i.id).custo) * num(i.qtd) : 0), 0)],
     ["Mão de obra por peça", num(c.maoDeObra)],
@@ -486,7 +549,7 @@ function custos(p) {
 function render() {
   $("#brandName").textContent = state.config.loja ? `${state.config.loja} · Fichas Técnicas` : "Fichas Técnicas";
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === ui.tab));
-  ({ produtos: renderProdutos, modelos: renderModelos, insumos: renderInsumos, config: renderConfig })[ui.tab]();
+  ({ produtos: renderProdutos, modelos: renderModelos, tintas: renderTintas, insumos: renderInsumos, config: renderConfig })[ui.tab]();
   renderStatus(); renderMenu();
 }
 function renderMenu() {
@@ -559,7 +622,7 @@ function editorHTML(p) {
         <label class="f span2"><span>Observações</span><textarea data-s="p" data-k="notas">${esc(p.notas)}</textarea></label>
       </div></div>
 
-      <div class="card"><h3>Estampas <span class="sp"></span><button class="btn sm" data-act="addArt">+ Adicionar arte</button></h3><div class="bd">
+      <div class="card"><h3>Estampas <span class="sp"></span><button class="btn sm" data-act="importPS" title="Arquivo gerado pelo script “Enviar para a ficha” no Photoshop">+ Do Photoshop</button><button class="btn sm" data-act="addArt">+ Adicionar arte</button></h3><div class="bd">
         ${p.estampas.map(a => artCardHTML(a)).join("") || `<div class="hint">Nenhuma estampa. Use “+ Adicionar arte” (PNG com fundo transparente é o ideal).</div>`}
       </div></div>
 
@@ -611,15 +674,11 @@ function artCardHTML(a) {
       </div>
       <div>
         <div class="hint" style="margin-bottom:4px;font-weight:600;color:var(--ink)">Cores / tintas (na ordem de impressão)</div>
-        <table class="cores"><thead><tr><th></th><th>Cor</th><th>Pantone</th><th>Tinta</th><th></th></tr></thead><tbody>
-        ${a.cores.map((c, i) => `<tr>
-          <td><input type="color" data-s="cor:${a.id}:${i}" data-k="hex" value="${esc(c.hex)}"></td>
-          <td><input data-s="cor:${a.id}:${i}" data-k="nome" value="${esc(c.nome)}" placeholder="Ex.: Vermelho"></td>
-          <td><input data-s="cor:${a.id}:${i}" data-k="pantone" value="${esc(c.pantone)}" placeholder="485 C"></td>
-          <td><select data-s="cor:${a.id}:${i}" data-k="tipo">${TIPOS_TINTA.map(t => `<option ${t === c.tipo ? "selected" : ""}>${t}</option>`).join("")}</select></td>
-          <td><button class="x" data-act="delCor" data-id="${a.id}" data-i="${i}" title="Remover cor">×</button></td></tr>`).join("")}
-        </tbody></table>
+        ${a.baseBranca ? `<div class="cor-row"><div class="cor-l1"><span class="sw-box" style="background:#fff"></span><b style="font-size:13px">0. Base branca</b>
+          ${a.baseFilm ? `<img class="film" src="${a.baseFilm}" alt="" title="Fotolito da base">` : ""}</div></div>` : ""}
+        ${a.cores.map((c, i) => corRowHTML(a, c, i)).join("")}
         <button class="btn sm" style="margin-top:6px" data-act="addCor" data-id="${a.id}">+ Cor</button>
+        ${state.formulas.length ? "" : `<div class="hint" style="margin-top:6px">Importe as fórmulas do BBOXCOLOR na aba “Tintas” para ligar cada cor à sua receita.</div>`}
       </div>
       <div class="fg c3">
         <label class="chk"><input type="checkbox" data-s="${s}" data-k="baseBranca" ${a.baseBranca ? "checked" : ""}> Base branca (underbase)</label>
@@ -631,6 +690,25 @@ function artCardHTML(a) {
         <label class="f span3"><span>Observações de produção</span><textarea data-s="${s}" data-k="obs" placeholder="Ex.: imprimir a base com rodo 70, duas passadas">${esc(a.obs)}</textarea></label>
       </div>
     </div>` : ""}
+  </div>`;
+}
+function corRowHTML(a, c, i) {
+  const s = `cor:${a.id}:${i}`, lab = rgb2lab(hex2rgb(c.hex)), f = formulaOf(c.formulaId);
+  const opts = state.formulas.map(x => ({ x, d: dE(lab, x) })).sort((p, q) => p.d - q.d);
+  return `<div class="cor-row">
+    <div class="cor-l1">
+      <input type="color" data-s="${s}" data-k="hex" value="${esc(c.hex)}" title="${esc(labTxt(lab))}">
+      <input data-s="${s}" data-k="nome" value="${esc(c.nome)}" placeholder="Ex.: Vermelho">
+      <input data-s="${s}" data-k="pantone" value="${esc(c.pantone)}" placeholder="Pantone">
+      <select data-s="${s}" data-k="tipo">${TIPOS_TINTA.map(t => `<option ${t === c.tipo ? "selected" : ""}>${t}</option>`).join("")}</select>
+      <span class="ord"><button class="x" data-act="movCor" data-id="${a.id}" data-i="${i}" data-d="-1" title="Subir" ${i ? "" : "disabled"}>↑</button><button class="x" data-act="movCor" data-id="${a.id}" data-i="${i}" data-d="1" title="Descer" ${i < a.cores.length - 1 ? "" : "disabled"}>↓</button><button class="x" data-act="delCor" data-id="${a.id}" data-i="${i}" title="Remover cor">×</button></span>
+    </div>
+    <div class="cor-l2">
+      <span class="n">${i + 1}.</span>
+      ${state.formulas.length ? `<select data-s="${s}" data-k="formulaId" data-rerender="1"><option value="">— sem fórmula —</option>${opts.map(({ x, d }) => `<option value="${x.id}" ${x.id === c.formulaId ? "selected" : ""}>${esc(x.nome)} · ΔE ${fmtCm(d)}</option>`).join("")}</select>` : ""}
+      ${c.film ? `<img class="film" src="${c.film}" alt="" title="Fotolito">` : ""}
+    </div>
+    ${f ? `<div class="cor-l2 hint"><span class="n"></span>${esc(compsTxt(f.comps))} · preparar ≈ ${Math.round(gramasCor(cur()))} g</div>` : ""}
   </div>`;
 }
 function artSum(a) {
@@ -755,6 +833,161 @@ function renderInsumos() {
     </div></div></section>`;
 }
 
+/* ---------- tintas e fórmulas ---------- */
+const tipoOpts = v => `<option value="">—</option>${TIPOS_TINTA.map(t => `<option ${t === v ? "selected" : ""}>${t}</option>`).join("")}`;
+function renderTintas() {
+  const c = state.config;
+  const uso = id => state.products.filter(p => p.estampas.some(a => a.cores.some(x => x.formulaId === id))).length;
+  $("#main").innerHTML = `<section class="content" style="max-width:1150px">
+    <div class="ed-head"><h2 style="margin:0;flex:1">Tintas e fórmulas</h2>
+      <button class="btn" data-act="importBBox">Importar do BBOXCOLOR…</button>
+      <button class="btn pri" data-act="newFormula">+ Nova fórmula</button></div>
+    <div class="banner ok" style="margin:0 0 14px">No BBOXCOLOR: aba <b>Config → Exportar JSON</b>, depois importe o arquivo aqui. Vêm as tintas base e os registros de calibração (as fórmulas que você salvou). Importar de novo atualiza sem duplicar.</div>
+    <div class="card"><h3>Fórmulas (${state.formulas.length})</h3><div class="bd">
+      ${state.formulas.length ? `<div class="fcards">${state.formulas.map(f => { const s = `form:${f.id}`; return `<div class="fcard">
+        <div class="ftop"><div class="sw-big" data-sw="${s}" style="background:${lab2hex(f)}"></div>
+          <input data-s="${s}" data-k="nome" value="${esc(f.nome)}" style="font-weight:600">
+          <button class="x" data-act="delFormula" data-id="${f.id}" title="Excluir fórmula">×</button></div>
+        <div class="fg c3">
+          <label class="f"><span>L*</span><input type="number" step="0.01" data-s="${s}" data-k="L" value="${r1(f.L)}"></label>
+          <label class="f"><span>a*</span><input type="number" step="0.01" data-s="${s}" data-k="a" value="${r1(f.a)}"></label>
+          <label class="f"><span>b*</span><input type="number" step="0.01" data-s="${s}" data-k="b" value="${r1(f.b)}"></label>
+          <label class="f"><span>Tinta</span><select data-s="${s}" data-k="tipo">${tipoOpts(f.tipo)}</select></label>
+          <label class="f"><span>Mesh</span><input data-s="${s}" data-k="mesh" value="${esc(f.mesh)}"></label>
+          <label class="f"><span>Substrato</span><input data-s="${s}" data-k="sub" value="${esc(f.sub)}"></label>
+        </div>
+        <table class="tbl"><tbody>${f.comps.map((x, i) => `<tr>
+          <td><select data-s="fcomp:${f.id}:${i}" data-k="nome">${state.tintas.some(t => t.nome === x.nome) ? "" : `<option>${esc(x.nome)}</option>`}${state.tintas.map(t => `<option ${t.nome === x.nome ? "selected" : ""}>${esc(t.nome)}</option>`).join("")}</select></td>
+          <td style="width:84px"><input type="number" step="0.1" data-s="fcomp:${f.id}:${i}" data-k="p" value="${x.p}" title="%"></td>
+          <td style="width:28px"><button class="x" data-act="delComp" data-id="${f.id}" data-i="${i}">×</button></td></tr>`).join("")}</tbody></table>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn sm" data-act="addComp" data-id="${f.id}">+ componente</button>
+          <span class="hint" style="flex:1;text-align:right">${f.origem ? esc(f.origem) + " · " : ""}usada em ${uso(f.id)} produto(s)</span></div>
+      </div>`; }).join("")}</div>` : `<div class="hint">Nenhuma fórmula ainda. Importe do BBOXCOLOR ou crie uma.</div>`}
+    </div></div>
+    <div class="card"><h3>Tintas base (${state.tintas.length}) <span class="sp"></span><button class="btn sm" data-act="newTb">+ Tinta base</button></h3><div class="bd">
+      <table class="tbl"><thead><tr><th style="width:40px"></th><th>Nome</th><th style="width:150px">Tipo</th><th style="width:80px">L*</th><th style="width:80px">a*</th><th style="width:80px">b*</th><th style="width:110px">Custo (R$/kg)</th><th style="width:30px"></th></tr></thead><tbody>
+      ${state.tintas.map(t => { const s = `tb:${t.id}`; return `<tr><td><span class="sw-box" data-sw="${s}" style="width:30px;height:24px;background:${lab2hex(t)}"></span></td>
+        <td><input data-s="${s}" data-k="nome" value="${esc(t.nome)}"></td><td><select data-s="${s}" data-k="tipo">${tipoOpts(t.tipo)}</select></td>
+        <td><input type="number" step="0.01" data-s="${s}" data-k="L" value="${t.L}"></td><td><input type="number" step="0.01" data-s="${s}" data-k="a" value="${t.a}"></td><td><input type="number" step="0.01" data-s="${s}" data-k="b" value="${t.b}"></td>
+        <td><input type="number" step="0.01" data-s="${s}" data-k="custoKg" value="${t.custoKg}"></td><td><button class="x" data-act="delTb" data-id="${t.id}">×</button></td></tr>`; }).join("") || `<tr><td colspan="8" class="hint">Nenhuma tinta base.</td></tr>`}
+      </tbody></table>
+      <div class="hint" style="margin-top:8px">Com o custo por kg preenchido, o custo da tinta de cada produto passa a sair da fórmula, em vez do valor fixo por cor das Configurações.</div>
+    </div></div>
+    <div class="card"><h3>Consumo de tinta</h3><div class="bd fg c3">
+      <label class="f"><span>Consumo médio (g por cor, por peça)</span><input type="number" step="0.1" data-s="cfg" data-k="consumoG" value="${c.consumoG}"></label>
+      <label class="f"><span>Sobra / perda na tela (%)</span><input type="number" step="1" data-s="cfg" data-k="perdaPct" value="${c.perdaPct}"></label>
+      <div class="hint">Usado para dizer quantos gramas de cada tinta preparar para a tiragem e para o custo pela fórmula.</div>
+    </div></div></section>`;
+}
+function importBBox() {
+  pickFile(".json,application/json", async f => {
+    try {
+      const d = JSON.parse(await f.text());
+      if (!Array.isArray(d.tintas) && !Array.isArray(d.calibracoes)) throw new Error("não parece um arquivo exportado do BBOXCOLOR");
+      const guess = n => /^P\d/i.test(n) ? "Plastisol" : /^T\d/i.test(n) ? "À base d'água" : "";
+      const tipo = s => /plast/i.test(s) ? "Plastisol" : /gua/i.test(s) ? "À base d'água" : TIPOS_TINTA.includes(s) ? s : "";
+      let nt = 0, ut = 0, nf = 0;
+      const upTinta = t => {
+        if (!t?.nome) return;
+        const ex = state.tintas.find(x => x.nome === t.nome);
+        if (ex) { Object.assign(ex, { L: num(t.L), a: num(t.a), b: num(t.b) }); ut++; }
+        else { state.tintas.push({ id: uid(), nome: t.nome, L: num(t.L), a: num(t.a), b: num(t.b), tipo: guess(t.nome), custoKg: 0 }); nt++; }
+      };
+      (d.tintas || []).forEach(upTinta);
+      for (const c of d.calibracoes || []) {
+        (c.comps || []).forEach(x => x.t && !state.tintas.some(t => t.nome === x.t.nome) && upTinta(x.t));
+        const comps = (c.comps || []).map(x => ({ nome: x.t?.nome || x.nome || "", p: num(x.p) }));
+        const res = c.res || {};
+        const key = JSON.stringify([comps, res.L, res.a, res.b]);
+        if (state.formulas.some(x => x.key === key)) continue;
+        state.formulas.push({ id: uid(), key, nome: (c.obs || "").trim().slice(0, 40) || compsTxt(comps), L: num(res.L), a: num(res.a), b: num(res.b), comps,
+          tipo: tipo(c.tipo || ""), sub: c.sub || "", mesh: c.mesh || "", esp: c.esp || "", obs: c.obs || "", origem: "BBOXCOLOR" });
+        nf++;
+      }
+      save(); render();
+      alert(`BBOXCOLOR importado:\n• ${nt} tintas base novas, ${ut} atualizadas\n• ${nf} fórmulas novas`);
+    } catch (e) { alert("Não consegui importar: " + e.message); }
+  });
+}
+
+/* ---------- importação do Photoshop (script "Enviar para a ficha") ---------- */
+function importPhotoshop() {
+  pickFile(".json,application/json", async f => {
+    try {
+      const d = JSON.parse(await f.text());
+      if (d.formato !== "ficha-photoshop" || !Array.isArray(d.canais) || !d.canais.length) throw new Error("o arquivo não veio do script “Enviar para a ficha”");
+      const r = await processarCanais(d);
+      const p = cur(), lado = ui.lado;
+      const a = { id: uid(), nome: String(d.documento || "Arte").replace(/\.[^.]+$/, ""), lado, img: r.img, ar: r.ar, wCm: r1(r.wCm), yCm: lado === "costas" ? 8 : 9, offX: 0,
+        baseBranca: !!r.base, baseFilm: r.base?.film || "", flash: true, malha: "", cura: "", obs: `Importado do Photoshop (${d.documento}) em ${today()}`, cores: r.cores };
+      p.estampas.push(a); ui.selArt = a.id; p.atualizado = Date.now(); save(); render();
+      const lig = r.cores.filter(c => c.formulaId).length;
+      alert(`Arte importada: ${fmtCm(a.wCm)} × ${fmtCm(a.wCm * a.ar)} cm, ${r.cores.length} cores${r.base ? " + base branca" : ""}.` +
+        (state.formulas.length ? `\n${lig} cor(es) ligadas automaticamente a uma fórmula (ΔE < 6).` : "") +
+        (r.ignorados.length ? `\nIgnorados: ${r.ignorados.join(", ")}.` : ""));
+    } catch (e) { alert("Não consegui importar: " + e.message); }
+  });
+}
+const loadImg = src => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("imagem de canal inválida")); im.src = src; });
+async function processarCanais(d) {
+  const imgs = await Promise.all(d.canais.map(c => loadImg(c.png)));
+  const W = imgs[0].naturalWidth, H = imgs[0].naturalHeight, N = W * H, LIM = 40;
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const g = cv.getContext("2d", { willReadFrequently: true });
+  const chans = [], ignorados = [];
+  d.canais.forEach((c, i) => {
+    if (/camiseta/i.test(c.nome)) { ignorados.push(c.nome); return; }
+    g.fillStyle = "#fff"; g.fillRect(0, 0, W, H); g.drawImage(imgs[i], 0, 0, W, H);
+    const px = g.getImageData(0, 0, W, H).data, ink = new Uint8Array(N);
+    // canal de cor especial: preto = tinta. Canal alfa "áreas mascaradas": branco = tinta.
+    const inv = c.tipo === "mascara";
+    let cov = 0;
+    for (let k = 0; k < N; k++) { const v = inv ? px[k * 4] : 255 - px[k * 4]; ink[k] = v; if (v > LIM) cov++; }
+    if (cov > N * 0.85) for (let k = 0; k < N; k++) ink[k] = 255 - ink[k];
+    const isBase = /base/i.test(c.nome) && /branc/i.test(c.nome);
+    const spot = c.tipo === "spot" && c.hex;
+    const hex = isBase ? "#ffffff" : spot ? c.hex : corPorNome(c.nome);
+    const lab = spot && Array.isArray(c.lab) ? { L: c.lab[0], a: c.lab[1], b: c.lab[2] } : rgb2lab(hex2rgb(hex));
+    chans.push({ c, ink, isBase, hex, lab });
+  });
+  if (!chans.length) throw new Error("nenhum canal de tinta no arquivo");
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (const { ink } of chans) for (let y = 0; y < H; y++) for (let x = 0, r = y * W; x < W; x++) if (ink[r + x] > LIM) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) throw new Error("os canais estão vazios");
+  const cw = x1 - x0 + 1, ch = y1 - y0 + 1, M = cw * ch;
+  // simula a impressão: base branca primeiro, depois as cores na ordem dos canais
+  const acc = new Float32Array(M * 4);
+  for (const k of [...chans.filter(c => c.isBase), ...chans.filter(c => !c.isBase)]) {
+    const [R, G, B] = hex2rgb(k.hex);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+      const al = k.ink[(y + y0) * W + x + x0] / 255; if (!al) continue;
+      const o = (y * cw + x) * 4;
+      acc[o] = R * al + acc[o] * (1 - al); acc[o + 1] = G * al + acc[o + 1] * (1 - al); acc[o + 2] = B * al + acc[o + 2] * (1 - al); acc[o + 3] = al + acc[o + 3] * (1 - al);
+    }
+  }
+  const oc = document.createElement("canvas"); oc.width = cw; oc.height = ch;
+  const og = oc.getContext("2d"), od = og.createImageData(cw, ch);
+  for (let k = 0; k < M; k++) { const A = acc[k * 4 + 3]; if (A > 0) { od.data[k * 4] = acc[k * 4] / A; od.data[k * 4 + 1] = acc[k * 4 + 1] / A; od.data[k * 4 + 2] = acc[k * 4 + 2] / A; } od.data[k * 4 + 3] = A * 255; }
+  og.putImageData(od, 0, 0);
+  const film = k => {
+    const fc = document.createElement("canvas"); fc.width = cw; fc.height = ch;
+    const fg = fc.getContext("2d"), fd = fg.createImageData(cw, ch);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const v = 255 - k.ink[(y + y0) * W + x + x0], o = (y * cw + x) * 4; fd.data[o] = fd.data[o + 1] = fd.data[o + 2] = v; fd.data[o + 3] = 255; }
+    fg.putImageData(fd, 0, 0);
+    const s = Math.min(1, 300 / Math.max(cw, ch)), sc = document.createElement("canvas");
+    sc.width = Math.max(1, Math.round(cw * s)); sc.height = Math.max(1, Math.round(ch * s));
+    sc.getContext("2d").drawImage(fc, 0, 0, sc.width, sc.height);
+    return sc.toDataURL("image/png");
+  };
+  const cores = chans.filter(k => !k.isBase).map(k => {
+    const fm = matchFormula(k.lab);
+    const pant = /pantone\s+(.+)/i.exec(k.c.nome);
+    return { nome: k.c.nome, pantone: pant ? pant[1] : "", hex: fm ? lab2hex(fm) : k.hex, tipo: TIPOS_TINTA.includes(fm?.tipo) ? fm.tipo : "Plastisol", formulaId: fm?.id || "", film: film(k) };
+  });
+  const base = chans.find(k => k.isBase);
+  return { img: oc.toDataURL("image/png"), ar: ch / cw, wCm: cw / num(d.pxPorCm || 30), cores, base: base ? { film: film(base) } : null, ignorados };
+}
+
 /* ---------- configurações ---------- */
 function renderConfig() {
   const s = "cfg", c = state.config;
@@ -789,8 +1022,10 @@ function fichaHTML(p, withCosts) {
       <tr><td>Tamanho da arte</td><td><b>${dimText(a)}</b></td><td>Posição</td><td><b>${posText(a)}</b></td></tr>
       <tr><td>Telas</td><td>${a.cores.length + (a.baseBranca ? 1 : 0)}${a.baseBranca ? " (inclui base branca)" : ""}</td><td>Malha · cura</td><td>${esc(a.malha || "—")} · ${esc(a.cura || "—")}${a.flash ? " · flash entre cores" : ""}</td></tr>
       <tr><td>Ordem das cores</td><td colspan="3">${a.baseBranca ? "0. Base branca → " : ""}${a.cores.map((x, i) => `${i + 1}. <span class="sw" style="background:${esc(x.hex)}"></span>${esc(x.nome)}${x.pantone ? ` (Pantone ${esc(x.pantone)})` : ""} – ${esc(x.tipo)}`).join(" → ") || "—"}</td></tr>
+      ${a.baseFilm || a.cores.some(x => x.film) ? `<tr><td>Fotolitos</td><td colspan="3"><div class="films">${a.baseBranca && a.baseFilm ? `<figure><img src="${a.baseFilm}" alt=""><figcaption>0. Base</figcaption></figure>` : ""}${a.cores.map((x, i) => x.film ? `<figure><img src="${x.film}" alt=""><figcaption>${i + 1}. ${esc(x.nome)}</figcaption></figure>` : "").join("")}</div></td></tr>` : ""}
       ${a.obs ? `<tr><td>Obs.</td><td colspan="3">${esc(a.obs)}</td></tr>` : ""}
     </table></div>`).join("") || "<p>Sem estampas.</p>"}
+    ${preparoHTML(p)}
     <div class="two">
       <div><h2>Camiseta</h2>${b ? `<table>
         <tr><td>Modelo</td><td>${esc(b.nome)}</td></tr><tr><td>Fornecedor</td><td>${esc(b.fornecedor || "—")}</td></tr>
@@ -807,6 +1042,18 @@ function fichaHTML(p, withCosts) {
     ${p.notas ? `<h2>Observações</h2><p style="font-size:9.5pt;margin:0">${esc(p.notas).replace(/\n/g, "<br>")}</p>` : ""}
     <div class="sign"><div>Arte aprovada por / data</div><div>Telas conferidas por / data</div><div>Primeira peça aprovada por / data</div></div>
   </div>`;
+}
+
+function preparoHTML(p) {
+  const rows = [];
+  p.estampas.forEach(a => a.cores.forEach(x => { const f = formulaOf(x.formulaId); if (f) rows.push({ a, x, f }); }));
+  if (!rows.length) return "";
+  const gr = gramasCor(p), c = state.config;
+  return `<h2>Preparo de tintas · ${p.tiragem} peças × ${fmtCm(c.consumoG)} g + ${fmtCm(c.perdaPct)}% de sobra ≈ ${Math.round(gr)} g por cor</h2>
+    <table><tr><th style="width:26%">Cor</th><th>Fórmula</th><th style="width:30%">Pesar</th></tr>
+    ${rows.map(({ a, x, f }) => `<tr><td><span class="sw" style="background:${esc(lab2hex(f))}"></span>${esc(x.nome)}<br><small>${esc(a.nome)} · ${esc(f.nome)}</small></td>
+      <td>${esc(compsTxt(f.comps))}<br><small>${labTxt(f)}${f.mesh ? " · mesh " + esc(f.mesh) : ""}</small></td>
+      <td>${f.comps.map(k => `${Math.round(gr * k.p / 100)} g ${esc(k.nome.replace(/^[A-Z]?\d+\s*-\s*/, ""))}`).join("<br>")}</td></tr>`).join("")}</table>`;
 }
 
 /* ================= ações ================= */
@@ -872,6 +1119,25 @@ document.addEventListener("click", async e => {
     case "center": { const a = target("art:" + id); a.offX = 0; save(); return refreshProduct(); }
     case "addCor": target("art:" + id).cores.push({ nome: "", pantone: "", hex: "#888888", tipo: "Plastisol" }); save(); return render();
     case "delCor": target("art:" + id).cores.splice(+el.dataset.i, 1); save(); return render();
+    case "movCor": {
+      const cs = target("art:" + id).cores, i = +el.dataset.i, j = i + +el.dataset.d;
+      if (j < 0 || j >= cs.length) return;
+      [cs[i], cs[j]] = [cs[j], cs[i]]; save(); return render();
+    }
+    case "importPS": return importPhotoshop();
+    case "importBBox": return importBBox();
+    case "newFormula": state.formulas.unshift({ id: uid(), nome: "Nova fórmula", L: 50, a: 0, b: 0, comps: [], tipo: "", sub: "", mesh: "", esp: "", obs: "", origem: "" }); save(); return render();
+    case "delFormula": {
+      const f = formulaOf(id);
+      if (!confirm(`Excluir a fórmula “${f.nome}”? As cores ligadas a ela ficam sem fórmula.`)) return;
+      state.formulas = state.formulas.filter(x => x !== f);
+      state.products.forEach(pr => pr.estampas.forEach(a => a.cores.forEach(c => { if (c.formulaId === id) c.formulaId = ""; })));
+      save(); return render();
+    }
+    case "addComp": formulaOf(id).comps.push({ nome: state.tintas[0]?.nome || "", p: 0 }); save(); return render();
+    case "delComp": formulaOf(id).comps.splice(+el.dataset.i, 1); save(); return render();
+    case "newTb": state.tintas.push({ id: uid(), nome: "Nova tinta", L: 50, a: 0, b: 0, tipo: "", custoKg: 0 }); save(); return render();
+    case "delTb": if (!confirm("Excluir esta tinta base?")) return; state.tintas = state.tintas.filter(t => t.id !== id); save(); return render();
     case "delPins": p.insumos.splice(+el.dataset.i, 1); save(); return render();
     case "print":
       $("#print").innerHTML = fichaHTML(p, ui.printCosts);
@@ -937,8 +1203,16 @@ document.addEventListener("input", e => {
   const o = target(el.dataset.s); if (!o) return;
   const v = el.type === "checkbox" ? el.checked : el.type === "number" ? num(el.value) : el.value;
   setF(o, el.dataset.k, v);
-  save();
   const t = el.dataset.s.split(":")[0];
+  // escolher a fórmula traz a cor medida e o tipo de tinta dela
+  if (t === "cor" && el.dataset.k === "formulaId" && v) {
+    const f = formulaOf(v);
+    if (f) { o.hex = lab2hex(f); if (TIPOS_TINTA.includes(f.tipo)) o.tipo = f.tipo; }
+  }
+  save();
+  if ((t === "form" || t === "tb") && "Lab".includes(el.dataset.k)) {
+    const sw = $(`[data-sw="${el.dataset.s}"]`); if (sw) sw.style.background = lab2hex(o);
+  }
   if (["p", "art", "cor", "pins"].includes(t)) cur().atualizado = Date.now();
   if (el.dataset.rerender) return render();
   if (["p", "art", "cor", "pins"].includes(t)) return refreshProduct();
@@ -946,7 +1220,13 @@ document.addEventListener("input", e => {
   if (t === "blank" && el.dataset.k === "refTam") return render();
 });
 // campos de texto que mudam a lista lateral dos modelos
-document.addEventListener("change", e => { if (ui.tab === "modelos" && ["nome", "tam", "cor", "custo"].includes(e.target.dataset?.k)) render(); });
+document.addEventListener("change", e => {
+  const k = e.target.dataset?.k;
+  if (ui.tab === "modelos" && ["nome", "tam", "cor", "custo"].includes(k)) render();
+  if (ui.tab === "tintas" && e.target.dataset.s?.startsWith("tb:") && k === "nome") render();
+  // a cor mudou: reordena as fórmulas pela proximidade (ΔE)
+  if (ui.tab === "produtos" && e.target.dataset.s?.startsWith("cor:") && k === "hex") render();
+});
 
 /* ================= arrastar estampa ================= */
 document.addEventListener("pointerdown", e => {
