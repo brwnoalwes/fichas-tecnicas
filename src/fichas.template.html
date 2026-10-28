@@ -130,6 +130,13 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .x:disabled{opacity:.25;cursor:default;background:transparent;color:var(--muted)}
 .film{width:36px;height:36px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:4px;flex:none}
 .sw-box{width:38px;height:30px;border:1px solid var(--line);border-radius:6px;display:inline-block}
+.mix-in{display:grid;grid-template-columns:64px 72px repeat(3,minmax(60px,1fr)) minmax(110px,1.3fr) 90px 100px auto;gap:8px;align-items:end}
+.mix-res{display:grid;gap:8px;margin-top:12px}
+.mix-opt{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:10px}
+.mix-opt .pair{display:flex;flex:none;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.mix-opt .pair span{width:34px;height:48px;display:block}
+.de{font-weight:600}.de.good{color:var(--ok)}.de.warnc{color:var(--warn)}.de.bad{color:var(--accent)}
+@media (max-width:900px){.mix-in{grid-template-columns:repeat(4,1fr)}}
 .fcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
 .fcard{border:1px solid var(--line);border-radius:9px;padding:10px;display:grid;gap:8px}
 .fcard .ftop{display:flex;gap:8px;align-items:center}
@@ -262,7 +269,80 @@ function lab2hex({ L, a, b }) {
   return "#" + [c(x * 3.2406 - y * 1.5372 - z * 0.4986), c(-x * 0.9689 + y * 1.8758 + z * 0.0415), c(x * 0.0557 - y * 0.2040 + z * 1.0570)].map(v => v.toString(16).padStart(2, "0")).join("");
 }
 const dE = (p, q) => Math.hypot(p.L - q.L, p.a - q.a, p.b - q.b);
-const labTxt = o => `L ${r1(o.L)} · a ${r1(o.a)} · b ${r1(o.b)}`;
+
+/* ================= mistura de tintas (Kubelka-Munk simplificado, por canal RGB linear) ================= */
+function lab2lin({ L, a, b }) {
+  let y = (L + 16) / 116, x = a / 500 + y, z = y - b / 200;
+  const f = t => { const t3 = t * t * t; return t3 > 0.008856 ? t3 : (t - 16 / 116) / 7.787; };
+  x = 0.95047 * f(x); y = f(y); z = 1.08883 * f(z);
+  const cl = v => Math.min(0.9995, Math.max(0.0005, v));
+  return [cl(x * 3.2406 - y * 1.5372 - z * 0.4986), cl(-x * 0.9689 + y * 1.8758 + z * 0.0415), cl(x * 0.0557 - y * 0.2040 + z * 1.0570)];
+}
+function lin2lab([r, g, b]) {
+  const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  const X = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047), Y = f(r * 0.2126 + g * 0.7152 + b * 0.0722), Z = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883);
+  return { L: 116 * Y - 16, a: 500 * (X - Y), b: 200 * (Y - Z) };
+}
+const ksOf = R => (1 - R) * (1 - R) / (2 * R);
+const rOfKs = k => 1 + k - Math.sqrt(k * k + 2 * k);
+// prevê a cor de uma mistura: pesos (somando 1) × K/S de cada tinta base
+function mixLab(ks, w) {
+  const m = [0, 0, 0];
+  for (let i = 0; i < w.length; i++) for (let c = 0; c < 3; c++) m[c] += w[i] * ks[i][c];
+  return lin2lab(m.map(rOfKs));
+}
+// todas as divisões de n partes inteiras (≥1) entre k tintas
+function composicoes(n, k, pre = [], out = []) {
+  if (k === 1) { out.push([...pre, n]); return out; }
+  for (let i = 1; i <= n - k + 1; i++) composicoes(n - i, k - 1, [...pre, i], out);
+  return out;
+}
+function combinacoes(arr, k, start = 0, pre = [], out = []) {
+  if (pre.length === k) { out.push(pre); return out; }
+  for (let i = start; i < arr.length; i++) combinacoes(arr, k, i + 1, [...pre, arr[i]], out);
+  return out;
+}
+function calcularMistura(alvo, bases, maxN) {
+  const perto = [...bases].sort((x, y) => dE(alvo, x) - dE(alvo, y));
+  const cand = perto.slice(0, 8);
+  for (const t of bases) if (/branc|white|pret|black/i.test(t.nome) && !cand.includes(t)) cand.push(t);
+  const res = [];
+  for (let k = 1; k <= Math.min(maxN, cand.length); k++) {
+    const grade = composicoes(20, k); // passos de 5%
+    for (const sub of combinacoes(cand, k)) {
+      const ks = sub.map(t => lab2lin(t).map(ksOf));
+      let best = null;
+      for (const g of grade) { const w = g.map(v => v / 20), d = dE(alvo, mixLab(ks, w)); if (!best || d < best.d) best = { w, d }; }
+      // refino em milésimos: passa 1% (depois 0,1%) de uma tinta para outra enquanto melhorar
+      let w = best.w.map(v => Math.round(v * 1000)), d = best.d;
+      for (const passo of [10, 1]) {
+        let melhorou = true, n = 0;
+        while (melhorou && n++ < 400) {
+          melhorou = false;
+          for (let i = 0; i < k; i++) for (let j = 0; j < k; j++) {
+            if (i === j || w[j] <= passo) continue;
+            const t = w.slice(); t[i] += passo; t[j] -= passo;
+            const dt = dE(alvo, mixLab(ks, t.map(v => v / 1000)));
+            if (dt < d - 1e-6) { w = t; d = dt; melhorou = true; }
+          }
+        }
+      }
+      // traço abaixo de 0,5% não é pesável: a combinação sem essa tinta já é calculada à parte
+      if (k > 1 && w.some(v => v < 5)) continue;
+      res.push({ comps: sub.map((t, i) => ({ nome: t.nome, p: w[i] / 10 })).sort((p, q) => q.p - p.p), d, lab: mixLab(ks, w.map(v => v / 1000)) });
+    }
+  }
+  res.sort((p, q) => p.d - q.d || p.comps.length - q.comps.length);
+  // 3 melhores combinações diferentes (no empate, a com menos tintas)
+  const top = [];
+  for (const r of res) {
+    if (top.some(t => t.comps.map(c => c.nome).join() === r.comps.map(c => c.nome).join())) continue;
+    top.push(r); if (top.length === 3) break;
+  }
+  return top;
+}
+const deClasse = d => d < 2 ? ["Excelente", "good"] : d < 4 ? ["Aceitável", "warnc"] : ["Desvio alto", "bad"];
+const labTxt = o => `L ${fmtCm(o.L)} · a ${fmtCm(o.a)} · b ${fmtCm(o.b)}`;
 const CORES_NOME = [[/vermelh/i, "#d0312d"], [/amarel/i, "#f2c500"], [/verde/i, "#2e9e4f"], [/cian/i, "#00a0d6"], [/azul/i, "#1f4fbf"], [/magenta/i, "#d6177a"],
   [/laranja/i, "#f07a1a"], [/pret|black/i, "#111111"], [/branc|white/i, "#ffffff"], [/cinza|gr[ae]y/i, "#8a8a8a"], [/pele/i, "#e8b48f"], [/marrom/i, "#6b4226"], [/violeta|roxo/i, "#6a3d9a"]];
 const corPorNome = n => (CORES_NOME.find(([re]) => re.test(n)) || [0, "#999999"])[1];
@@ -323,7 +403,8 @@ function seedState() {
 
 /* ================= estado ================= */
 let state;
-const ui = { tab: "produtos", productId: null, lado: "costas", tam: null, guides: true, selArt: null, search: "", blankId: null, calib: null, printCosts: true };
+const ui = { tab: "produtos", productId: null, lado: "costas", tam: null, guides: true, selArt: null, search: "", blankId: null, calib: null, printCosts: true,
+  mix: { L: 50, a: 40, b: 30, tipo: "", max: 3, qtd: 1000, nome: "", res: null, from: null } };
 
 const cur = () => state.products.find(p => p.id === ui.productId);
 const blankOf = p => state.blanks.find(b => b.id === p?.blankId);
@@ -706,6 +787,7 @@ function corRowHTML(a, c, i) {
     <div class="cor-l2">
       <span class="n">${i + 1}.</span>
       ${state.formulas.length ? `<select data-s="${s}" data-k="formulaId" data-rerender="1"><option value="">— sem fórmula —</option>${opts.map(({ x, d }) => `<option value="${x.id}" ${x.id === c.formulaId ? "selected" : ""}>${esc(x.nome)} · ΔE ${fmtCm(d)}</option>`).join("")}</select>` : ""}
+      ${state.tintas.length ? `<button class="btn sm" data-act="calcCor" data-id="${a.id}" data-i="${i}" title="Calcular a mistura desta cor com as tintas base">Calcular mistura</button>` : ""}
       ${c.film ? `<img class="film" src="${c.film}" alt="" title="Fotolito">` : ""}
     </div>
     ${f ? `<div class="cor-l2 hint"><span class="n"></span>${esc(compsTxt(f.comps))} · preparar ≈ ${Math.round(gramasCor(cur()))} g</div>` : ""}
@@ -842,7 +924,7 @@ function renderTintas() {
     <div class="ed-head"><h2 style="margin:0;flex:1">Tintas e fórmulas</h2>
       <button class="btn" data-act="importBBox">Importar do BBOXCOLOR…</button>
       <button class="btn pri" data-act="newFormula">+ Nova fórmula</button></div>
-    <div class="banner ok" style="margin:0 0 14px">No BBOXCOLOR: aba <b>Config → Exportar JSON</b>, depois importe o arquivo aqui. Vêm as tintas base e os registros de calibração (as fórmulas que você salvou). Importar de novo atualiza sem duplicar.</div>
+    ${mixCardHTML()}
     <div class="card"><h3>Fórmulas (${state.formulas.length})</h3><div class="bd">
       ${state.formulas.length ? `<div class="fcards">${state.formulas.map(f => { const s = `form:${f.id}`; return `<div class="fcard">
         <div class="ftop"><div class="sw-big" data-sw="${s}" style="background:${lab2hex(f)}"></div>
@@ -878,6 +960,40 @@ function renderTintas() {
       <label class="f"><span>Sobra / perda na tela (%)</span><input type="number" step="1" data-s="cfg" data-k="perdaPct" value="${c.perdaPct}"></label>
       <div class="hint">Usado para dizer quantos gramas de cada tinta preparar para a tiragem e para o custo pela fórmula.</div>
     </div></div></section>`;
+}
+function mixCardHTML() {
+  const m = ui.mix, alvoHex = lab2hex(m);
+  const fromCor = m.from && state.products.find(p => p.id === m.from.pid);
+  return `<div class="card" id="mixCard"><h3>Calcular mistura ${fromCor ? `<span class="badge">para “${esc(m.nome)}” · ${esc(fromCor.nome)}</span>` : ""}</h3><div class="bd">
+    ${state.tintas.length ? "" : `<div class="banner" style="margin:0 0 10px">Cadastre ou importe as tintas base (abaixo) antes de calcular.</div>`}
+    <div class="mix-in">
+      <div class="sw-big" id="mixSw" style="background:${alvoHex};width:64px;height:64px"></div>
+      <label class="f"><span>Cor alvo</span><input type="color" data-mix="hex" value="${alvoHex}" style="width:64px"></label>
+      <label class="f"><span>L*</span><input type="number" step="0.01" data-mix="L" value="${r1(m.L)}"></label>
+      <label class="f"><span>a*</span><input type="number" step="0.01" data-mix="a" value="${r1(m.a)}"></label>
+      <label class="f"><span>b*</span><input type="number" step="0.01" data-mix="b" value="${r1(m.b)}"></label>
+      <label class="f"><span>Tinta</span><select data-mix="tipo"><option value="">Todas</option>${TIPOS_TINTA.map(t => `<option ${t === m.tipo ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <label class="f"><span>Máx. de tintas</span><select data-mix="max">${[2, 3, 4].map(n => `<option ${n === m.max ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="f"><span>Produzir (g)</span><input type="number" step="50" data-mix="qtd" value="${m.qtd}"></label>
+      <button class="btn acc" data-act="calcMix" ${state.tintas.length ? "" : "disabled"}>Calcular</button>
+    </div>
+    <div class="hint" style="margin-top:6px">Digite o Lab medido (espectrofotômetro ou o conta-gotas do Photoshop no modo Lab) ou escolha a cor. A previsão usa um modelo de mistura subtrativa (Kubelka-Munk simplificado): confirme sempre com uma prova impressa.</div>
+    <div id="mixOut">${mixOutHTML()}</div>
+  </div></div>`;
+}
+function mixOutHTML() {
+  const m = ui.mix;
+  if (!m.res) return "";
+  if (!m.res.length) return `<div class="banner" style="margin-top:10px">Nenhuma tinta base do tipo escolhido.</div>`;
+  return `<div class="mix-res">${m.res.map((r, i) => { const [cl, cc] = deClasse(r.d); return `<div class="mix-opt">
+    <div class="pair"><span style="background:${lab2hex(m)}" title="alvo"></span><span style="background:${lab2hex(r.lab)}" title="previsto"></span></div>
+    <div style="flex:1;min-width:0">
+      <div><b>${i === 0 ? "Melhor opção" : `Opção ${i + 1}`}</b> · <span class="de ${cc}">ΔE ${fmtCm(r.d)} · ${cl}</span></div>
+      <div style="font-size:13px;margin:3px 0">${r.comps.map(c => `${fmtCm(c.p)}% ${esc(c.nome)} <b>(${fmtCm(m.qtd * c.p / 100)} g)</b>`).join(" + ")}</div>
+      <div class="hint">Previsto: ${labTxt(r.lab)}</div>
+    </div>
+    <button class="btn sm ${i === 0 ? "pri" : ""}" data-act="saveMix" data-i="${i}">${m.from ? "Salvar e ligar à cor" : "Salvar fórmula"}</button>
+  </div>`; }).join("")}</div>`;
 }
 function importBBox() {
   pickFile(".json,application/json", async f => {
@@ -1125,6 +1241,38 @@ document.addEventListener("click", async e => {
       [cs[i], cs[j]] = [cs[j], cs[i]]; save(); return render();
     }
     case "importPS": return importPhotoshop();
+    case "calcMix": {
+      const m = ui.mix, bases = state.tintas.filter(t => !m.tipo || !t.tipo || t.tipo === m.tipo);
+      $("#mixOut").innerHTML = `<div class="hint" style="margin-top:10px">Calculando…</div>`;
+      setTimeout(() => { m.res = calcularMistura(m, bases, m.max); $("#mixOut").innerHTML = mixOutHTML(); }, 30);
+      return;
+    }
+    case "saveMix": {
+      const m = ui.mix, r = m.res[+el.dataset.i];
+      const nome = prompt("Nome da fórmula:", m.nome || compsTxt(r.comps));
+      if (nome === null) return;
+      const tipoBase = state.tintas.find(t => t.nome === r.comps[0].nome)?.tipo || "";
+      const f = { id: uid(), nome: nome.trim() || compsTxt(r.comps), L: m.L, a: m.a, b: m.b, comps: r.comps.map(c => ({ ...c })), tipo: m.tipo || tipoBase,
+        sub: "", mesh: "", esp: "", obs: `Calculada na ficha: previsto ${labTxt(r.lab)} (ΔE ${fmtCm(r.d)}).`, origem: "Calculada na ficha" };
+      state.formulas.unshift(f);
+      const from = m.from;
+      if (from) {
+        const pr = state.products.find(x => x.id === from.pid), c = pr?.estampas.find(x => x.id === from.aid)?.cores[from.i];
+        if (c) { c.formulaId = f.id; c.hex = lab2hex(f); if (TIPOS_TINTA.includes(f.tipo)) c.tipo = f.tipo; pr.atualizado = Date.now(); }
+        Object.assign(ui, { tab: "produtos", productId: from.pid, selArt: from.aid });
+        Object.assign(m, { from: null, res: null, nome: "" });
+      }
+      save(); render();
+      if (!from) alert(`Fórmula “${f.nome}” salva.`);
+      return;
+    }
+    case "calcCor": {
+      const c = target(`cor:${id}:${el.dataset.i}`), f = formulaOf(c.formulaId);
+      Object.assign(ui.mix, f ? { L: f.L, a: f.a, b: f.b } : rgb2lab(hex2rgb(c.hex)),
+        { from: { pid: ui.productId, aid: id, i: +el.dataset.i }, nome: c.nome, res: null, tipo: TIPOS_TINTA.includes(c.tipo) ? c.tipo : "" });
+      ui.tab = "tintas"; render(); scrollTo(0, 0);
+      return;
+    }
     case "importBBox": return importBBox();
     case "newFormula": state.formulas.unshift({ id: uid(), nome: "Nova fórmula", L: 50, a: 0, b: 0, comps: [], tipo: "", sub: "", mesh: "", esp: "", obs: "", origem: "" }); save(); return render();
     case "delFormula": {
@@ -1199,6 +1347,17 @@ document.addEventListener("input", e => {
   if (el.id === "guides") { ui.guides = el.checked; return drawMock(); }
   if (el.id === "printCosts") { ui.printCosts = el.checked; return; }
   if (el.id === "addIns") { if (el.value) { cur().insumos.push({ id: el.value, qtd: 1 }); save(); render(); } return; }
+  if (el.dataset.mix) {
+    const k = el.dataset.mix, m = ui.mix;
+    if (k === "hex") {
+      Object.assign(m, rgb2lab(hex2rgb(el.value)));
+      ["L", "a", "b"].forEach(x => { const i = $(`[data-mix="${x}"]`); if (i) i.value = r1(m[x]); });
+    } else m[k] = k === "tipo" ? el.value : num(el.value);
+    if (["L", "a", "b"].includes(k)) { const h = $('[data-mix="hex"]'); if (h) h.value = lab2hex(m); }
+    const sw = $("#mixSw"); if (sw) sw.style.background = lab2hex(m);
+    if (k === "qtd" && m.res) $("#mixOut").innerHTML = mixOutHTML();
+    return;
+  }
   if (!el.dataset.k) return;
   const o = target(el.dataset.s); if (!o) return;
   const v = el.type === "checkbox" ? el.checked : el.type === "number" ? num(el.value) : el.value;

@@ -7,6 +7,7 @@ Página única (HTML, sem dependências) para a loja de camisetas de anime e ser
 - **Custo e preço**: camiseta lisa + tinta + telas ÷ tiragem + insumos + mão de obra → preço sugerido, lucro e margem.
 - **Impressão A4** da ficha para a produção (com ou sem custos), com fotolitos de cada tela e o preparo de tintas em gramas.
 - **Tintas e fórmulas** (aba Tintas): importa o JSON exportado pelo BBOXCOLOR (tintas base + calibrações). Cada cor da estampa pode ser ligada a uma fórmula; a ficha calcula quantos gramas de cada base pesar para a tiragem e o custo da tinta pela fórmula.
+- **Calcular mistura** (aba Tintas, ou “Calcular mistura” em cada cor da estampa): a partir da cor alvo em Lab, testa combinações de até 2–4 tintas base com um modelo de mistura subtrativa (Kubelka-Munk simplificado por canal RGB linear), mostra as 3 melhores com ΔE e gramas, e salva como fórmula — já ligada à cor, quando aberto a partir dela. Previsão: sempre confirmar com prova impressa.
 - **Do Photoshop**: o script `photoshop/Enviar para a ficha.jsx` lê os canais da arte já separada (ex.: pelo BBOXSTAMP) e gera um `.ficha.json`. Em Produtos → Estampas → “+ Do Photoshop” a ficha cria a estampa com o tamanho real em cm, uma cor por canal (ligada à fórmula mais próxima, ΔE < 6), base branca e as miniaturas dos fotolitos.
 
 ## Script do Photoshop
