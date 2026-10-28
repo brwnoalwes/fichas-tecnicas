@@ -1,0 +1,8 @@
+{
+  "name": "fichas-tecnicas",
+  "private": true,
+  "scripts": {
+    "build": "node src/build.mjs",
+    "test": "node --test \"motor/testes/*.test.js\""
+  }
+}

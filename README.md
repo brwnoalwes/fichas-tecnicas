@@ -32,6 +32,10 @@ Os dados ficam no navegador; em **Arquivo → Salvar em um arquivo…** escolha 
 | `src/costas.jpg`, `src/frente.jpg` | Fotos do mockup de exemplo, embutidas no `index.html` |
 | `src/build.mjs` | Gera o `index.html`: `node src/build.mjs` |
 | `photoshop/Enviar para a ficha.jsx` | Script do Photoshop que exporta os canais separados para a ficha |
+| `motor/separacao.js` | Motor de separação de cores (paleta, canais, base branca, retícula, prova) — JS puro |
+| `motor/testes/` | Testes do motor: `npm test` |
+| `separacao.html` | Página de teste do motor: carregue uma arte e veja paleta, telas e prova de cor |
+| `docs/plugin-separacao.md` | Plano da extensão própria de separação para o Photoshop 2020 |
 
 Depois de editar `src/fichas.template.html`, rode `node src/build.mjs` e faça commit dos dois arquivos.
 

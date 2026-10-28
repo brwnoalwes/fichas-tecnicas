@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Separação de Cores</title>
+<style>
+:root{--bg:#f3f2ef;--panel:#fff;--ink:#1d1c1a;--muted:#6d6a64;--line:#e2dfd8;--soft:#f8f7f4;--accent:#c8372a;--ok:#2e7a4d;--warn:#9a6413;--warn-soft:#fcf1dc}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+button,input,select{font:inherit;color:inherit}
+input,select{border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 8px;min-width:0}
+input[type=range]{padding:0;border:0}
+input[type=color]{padding:2px;height:30px;width:44px}
+.top{display:flex;align-items:center;gap:14px;padding:10px 18px;background:var(--ink);color:#fff;position:sticky;top:0;z-index:5}
+.top a{color:#bdbab4;text-decoration:none}.top a:hover{color:#fff}
+.brand{font-weight:700;display:flex;gap:8px;align-items:center}.brand i{width:12px;height:12px;border-radius:50%;background:var(--accent)}
+.wrap{display:grid;grid-template-columns:330px 1fr;gap:18px;padding:18px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
+.card h3{margin:0;padding:11px 14px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--line)}
+.card .bd{padding:12px 14px;display:grid;gap:10px}
+label.f{display:grid;gap:3px;font-size:12px;color:var(--muted);font-weight:500}
+label.f .row{display:flex;gap:8px;align-items:center}
+label.f output{min-width:42px;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+.btn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:7px 12px;cursor:pointer}
+.btn.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+.hint{font-size:12px;color:var(--muted)}
+.cor{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.cor:last-child{border-bottom:0}
+.cor .sw{width:30px;height:30px;border-radius:6px;border:1px solid var(--line)}
+.cor small{color:var(--muted)}
+.cor select{font-size:12px;padding:3px 6px}
+.cor .base{font-size:11.5px;display:flex;gap:4px;align-items:center;color:var(--muted)}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:12.5px}
+.prova{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px}
+.prova canvas{width:100%;height:auto;display:block;border-radius:6px}
+.telas{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.tela{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px}
+.tela canvas{width:100%;height:auto;display:block;background:#fff;border:1px solid var(--line);image-rendering:pixelated}
+.tela .t{display:flex;gap:6px;align-items:center;font-weight:600;font-size:13px;margin-bottom:6px}
+.tela .t i{width:14px;height:14px;border-radius:3px;border:1px solid #0003;flex:none}
+.tela .t small{margin-left:auto;font-weight:400;color:var(--muted)}
+.vazio{color:var(--muted);text-align:center;padding:80px 20px;border:2px dashed var(--line);border-radius:12px}
+h2{font-size:15px;margin:18px 0 10px}
+@media (max-width:860px){.wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><i></i>Separação de cores <small style="font-weight:400;color:#bdbab4">· teste do motor</small></div>
+  <span style="flex:1"></span>
+  <a href="./">← Fichas técnicas</a>
+</header>
+<div class="wrap">
+  <aside>
+    <div class="card"><h3>Arte</h3><div class="bd">
+      <button class="btn pri" id="btnArte">Carregar arte…</button>
+      <input type="file" id="arquivo" accept="image/*" hidden>
+      <label class="f">Largura da arte impressa (cm)<input type="number" id="largCm" value="28" step="0.5" min="1"></label>
+      <div class="hint">PNG com fundo transparente ou arte sobre a cor da camiseta. Para a prévia, a imagem é reduzida para no máximo 1400 px; o resultado final sai no Photoshop, em resolução cheia.</div>
+    </div></div>
+    <div class="card"><h3>Paleta</h3><div class="bd">
+      <label class="f">Máximo de cores<div class="row"><input type="range" id="maxCores" min="2" max="12" value="8"><output id="oMax">8</output></div></label>
+      <label class="f">Juntar cores parecidas (ΔE)<div class="row"><input type="range" id="mesclar" min="4" max="30" value="12"><output id="oMes">12</output></div></label>
+      <div id="paleta"><div class="hint">Carregue uma arte.</div></div>
+    </div></div>
+    <div class="card"><h3>Separação</h3><div class="bd">
+      <label class="f">Cor da camiseta<div class="row"><input type="color" id="camiseta" value="#111111"><span class="hint" id="camHint"></span></div></label>
+      <label class="f">Bordas<select id="bordas"><option value="suaves">Suaves (meia-tinta na borda)</option><option value="duras">Duras (sem meia-tinta)</option></select></label>
+      <label class="f">Retração da base branca (choke)<div class="row"><input type="range" id="choke" min="0" max="10" step="0.5" value="1.5"><output id="oChoke">1,5 px</output></div></label>
+    </div></div>
+    <div class="card"><h3>Retícula (prévia)</h3><div class="bd">
+      <label class="f" style="display:flex;gap:8px;align-items:center;flex-direction:row;color:var(--ink)"><input type="checkbox" id="retOn"> Mostrar telas reticuladas</label>
+      <label class="f">LPI (linhas por polegada)<div class="row"><input type="range" id="lpi" min="20" max="85" value="45"><output id="oLpi">45</output></div></label>
+      <label class="f">Ângulo<div class="row"><input type="range" id="ang" min="0" max="90" step="0.5" value="22.5"><output id="oAng">22,5°</output></div></label>
+      <div class="hint" id="retHint"></div>
+    </div></div>
+  </aside>
+  <main>
+    <div id="saida"><div class="vazio">Carregue uma arte para ver a separação.<br><br><button class="btn" id="btnExemplo">Usar arte de exemplo</button></div></div>
+  </main>
+</div>
+<script src="motor/separacao.js"></script>
+<script>
+"use strict";
+const M = window.MotorSeparacao, $ = s => document.querySelector(s);
+const MAX = 1400;
+const st = { img: null, w: 0, h: 0, px: null, pal: null, papeis: [], base: [] };
+const fmt = n => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+
+function carregar(src) {
+  const im = new Image();
+  im.onload = () => {
+    const k = Math.min(1, MAX / Math.max(im.naturalWidth, im.naturalHeight));
+    const w = Math.max(1, Math.round(im.naturalWidth * k)), h = Math.max(1, Math.round(im.naturalHeight * k));
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const g = c.getContext("2d"); g.drawImage(im, 0, 0, w, h);
+    Object.assign(st, { w, h, px: g.getImageData(0, 0, w, h).data });
+    calcPaleta();
+  };
+  im.onerror = () => alert("Não consegui abrir essa imagem.");
+  im.src = src;
+}
+$("#btnArte").onclick = () => $("#arquivo").click();
+$("#arquivo").onchange = e => { const f = e.target.files[0]; if (f) carregar(URL.createObjectURL(f)); };
+document.addEventListener("click", e => { if (e.target.id === "btnExemplo") carregar(exemplo()); });
+
+function calcPaleta() {
+  if (!st.px) return;
+  st.pal = M.paleta(st.px, st.w, st.h, { maxCores: +$("#maxCores").value, mesclarDE: +$("#mesclar").value });
+  st.papeis = st.pal.cores.map((_, i) => i === st.pal.camiseta ? "camiseta" : "imprimir");
+  st.base = st.pal.cores.map(() => true);
+  if (st.pal.camiseta >= 0) { $("#camiseta").value = st.pal.cores[st.pal.camiseta].hex; $("#camHint").textContent = "detectada no fundo da arte"; }
+  else $("#camHint").textContent = "arte transparente: escolha a cor";
+  desenharPaleta(); separar();
+}
+function desenharPaleta() {
+  $("#paleta").innerHTML = st.pal.cores.map((c, i) => `<div class="cor">
+    <span class="sw" style="background:${c.hex}"></span>
+    <div><div>${c.hex} <small>· ${fmt(c.cobertura * 100)}%</small></div>
+      <label class="base"><input type="checkbox" data-base="${i}" ${st.base[i] ? "checked" : ""} ${st.papeis[i] !== "imprimir" ? "disabled" : ""}> leva base branca</label></div>
+    <select data-papel="${i}">
+      <option value="imprimir" ${st.papeis[i] === "imprimir" ? "selected" : ""}>Imprimir</option>
+      <option value="camiseta" ${st.papeis[i] === "camiseta" ? "selected" : ""}>Camiseta (vaza)</option>
+    </select></div>`).join("") || `<div class="hint">Nenhuma cor encontrada.</div>`;
+}
+$("#paleta").addEventListener("change", e => {
+  const p = e.target.dataset.papel, b = e.target.dataset.base;
+  if (p != null) {
+    st.papeis[+p] = e.target.value;
+    if (e.target.value === "camiseta") { st.papeis = st.papeis.map((v, i) => i === +p ? v : v === "camiseta" ? "imprimir" : v); $("#camiseta").value = st.pal.cores[+p].hex; }
+    desenharPaleta();
+  }
+  if (b != null) st.base[+b] = e.target.checked;
+  separar();
+});
+
+let timer;
+function separar() { clearTimeout(timer); timer = setTimeout(separarAgora, 60); }
+function separarAgora() {
+  if (!st.pal) return;
+  const { w, h, px } = st, t0 = performance.now();
+  const idx = st.pal.cores.map((_, i) => i).filter(i => st.papeis[i] === "imprimir");
+  const cores = idx.map(i => st.pal.cores[i]);
+  const camLab = M.rgb2lab(...M.hex2rgb($("#camiseta").value));
+  const { canais, foraDaPaleta } = M.separar(px, w, h, { cores, camiseta: camLab, bordas: $("#bordas").value });
+  // a retração é dada em px da prévia; convertemos a partir da largura impressa para ficar coerente
+  const dpi = w / (+$("#largCm").value / 2.54);
+  const base = M.baseBranca(canais, w, h, { usar: idx.map(i => st.base[i]), choke: +$("#choke").value });
+  const temBase = idx.some(i => st.base[i]);
+  const camadas = [...(temBase ? [{ canal: base, hex: "#ffffff", nome: "Base branca" }] : []), ...canais.map((c, k) => ({ canal: c, hex: cores[k].hex, nome: `Cor ${k + 1}` }))];
+  const ret = $("#retOn").checked, lpi = +$("#lpi").value, ang = +$("#ang").value;
+  const telas = camadas.map(c => ({ ...c, tinta: ret ? M.reticular(c.canal, w, h, { dpi, lpi, angulo: ang }) : c.canal }));
+  const prova = M.simular(telas.map(t => ({ canal: t.tinta, hex: t.hex })), w, h, $("#camiseta").value);
+  const ms = Math.round(performance.now() - t0);
+  $("#retHint").textContent = `Prévia a ${Math.round(dpi)} dpi (${w} px em ${fmt(+$("#largCm").value)} cm).` + (dpi < lpi * 4 ? " Resolução baixa para essa LPI: a retícula aparece serrilhada." : "");
+
+  $("#saida").innerHTML = `
+    ${foraDaPaleta > 0.01 ? `<div class="banner" style="margin-bottom:12px">${fmt(foraDaPaleta * 100)}% da arte está longe de todas as cores da paleta (degradê ou cor não detectada). Aumente o máximo de cores ou reduza o “juntar cores parecidas”. Ilustrações com degradê ficarão melhores com o processo simulado (fase 2).</div>` : ""}
+    <div class="prova"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>Prova de cor na camiseta</b><span class="hint">${telas.length} telas · ${ms} ms</span></div><canvas id="cvProva"></canvas></div>
+    <h2>Telas (fotolitos)</h2>
+    <div class="telas">${telas.map((t, i) => `<div class="tela"><div class="t"><i style="background:${t.hex}"></i>${i + 1}. ${t.nome}<small>${fmt(M.cobertura(t.tinta) * 100)}% de tinta</small></div><canvas data-tela="${i}"></canvas></div>`).join("")}</div>`;
+  pintar($("#cvProva"), prova);
+  telas.forEach((t, i) => {
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let k = 0; k < w * h; k++) { const v = 255 - t.tinta[k]; out[k * 4] = out[k * 4 + 1] = out[k * 4 + 2] = v; out[k * 4 + 3] = 255; }
+    pintar(document.querySelector(`[data-tela="${i}"]`), out);
+  });
+}
+function pintar(cv, rgba) { cv.width = st.w; cv.height = st.h; cv.getContext("2d").putImageData(new ImageData(rgba, st.w, st.h), 0, 0); }
+
+[["maxCores", "oMax", v => v], ["mesclar", "oMes", v => v], ["choke", "oChoke", v => fmt(+v) + " px"], ["lpi", "oLpi", v => v], ["ang", "oAng", v => fmt(+v) + "°"]]
+  .forEach(([id, o, f]) => { $("#" + id).addEventListener("input", e => { $("#" + o).textContent = f(e.target.value); (id === "maxCores" || id === "mesclar") ? calcPaleta() : separar(); }); });
+["camiseta", "bordas", "retOn", "largCm"].forEach(id => $("#" + id).addEventListener("input", separar));
+
+// arte de exemplo: tipografia + sol + faixa, sobre preto
+function exemplo() {
+  const c = document.createElement("canvas"); c.width = 900; c.height = 1000;
+  const g = c.getContext("2d");
+  g.fillStyle = "#111"; g.fillRect(0, 0, 900, 1000);
+  g.fillStyle = "#c8372a"; g.beginPath(); g.arc(450, 400, 300, 0, 7); g.fill();
+  g.fillStyle = "#f2c230"; g.fillRect(80, 560, 740, 90);
+  g.fillStyle = "#fff"; g.font = "bold 150px Impact, Arial Black, sans-serif"; g.textAlign = "center"; g.fillText("ANIME", 450, 460);
+  g.fillStyle = "#111"; g.font = "bold 56px Arial, sans-serif"; g.fillText("SERIGRAFIA", 450, 625);
+  g.fillStyle = "#3a7bd5"; g.font = "bold 70px Arial, sans-serif"; g.fillText("★ ★ ★", 450, 820);
+  return c.toDataURL();
+}
+</script>
+</body>
+</html>
