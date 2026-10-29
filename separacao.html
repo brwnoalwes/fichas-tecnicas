@@ -183,31 +183,18 @@ function separarAgora() {
   const idx = st.pal.cores.map((_, i) => i).filter(i => st.papeis[i] !== "camiseta");
   const cores = idx.map(i => st.pal.cores[i]);
   const camHex = $("#camiseta").value, camLab = M.rgb2lab(...M.hex2rgb(camHex));
-  const sep = M.separar(px, w, h, { cores, camiseta: camLab, bordas: $("#bordas").value });
-  let canais = sep.canais, traco = null, tracoHex = camHex, tracoLab = camLab;
-  // traço = cores da paleta marcadas como traço + (opcional) preto da camiseta dentro da arte
-  const ehTraco = canais.map((_, k) => st.papeis[idx[k]] === "traco");
-  const cores_ = canais.filter((_, k) => !ehTraco[k]);
-  if (ehTraco.some(Boolean)) {
-    traco = new Uint8Array(w * h);
-    canais.forEach((c, k) => { if (ehTraco[k]) { for (let p = 0; p < c.length; p++) if (c[p] > traco[p]) traco[p] = c[p]; tracoHex = cores[k].hex; tracoLab = cores[k].lab; } });
-  }
-  if ($("#tracoOn").checked && sep.camiseta) {
-    const t2 = M.tracoPreto(sep.camiseta, cores_, w, h, { alcance: mm(+$("#alcance").value) });
-    if (traco) for (let p = 0; p < t2.length; p++) { if (t2[p] > traco[p]) traco[p] = t2[p]; } else traco = t2;
-  }
-  if (traco) {
-    const presos = M.trap(cores_, traco, w, h, mm(+$("#trapMm").value));
-    let n = 0; canais = canais.map((c, k) => ehTraco[k] ? c : presos[n++]);
-  }
-  let telas = canais.map((c, k) => ({ canal: c, hex: cores[k].hex, lab: cores[k].lab, nome: st.nomes[idx[k]], tom: M.tipoTom(c), i: idx[k] }))
+  const sep = M.pipeline(px, w, h, {
+    cores, papeis: idx.map(i => st.papeis[i]), camiseta: camLab, bordas: $("#bordas").value,
+    tracoCamiseta: $("#tracoOn").checked, alcancePx: mm(+$("#alcance").value), trapPx: mm(+$("#trapMm").value),
+    baseOn: $("#baseOn").checked, base: idx.map(i => st.base[i]), chokePx: mm(+$("#choke").value),
+  });
+  const kTraco = idx.findIndex(i => st.papeis[i] === "traco");
+  const tracoHex = kTraco >= 0 ? cores[kTraco].hex : camHex, tracoLab = kTraco >= 0 ? cores[kTraco].lab : camLab;
+  let telas = sep.canais.map((c, k) => ({ canal: c, hex: cores[k].hex, lab: cores[k].lab, nome: st.nomes[idx[k]], tom: M.tipoTom(c), i: idx[k] }))
     .filter(t => st.papeis[t.i] === "imprimir" && M.cobertura(t.canal) > 0.00005);
-  if (traco && M.cobertura(traco) > 0.0005) telas.push({ canal: traco, hex: tracoHex, lab: tracoLab, nome: "Traço preto", tom: M.tipoTom(traco), traco: true });
+  if (sep.traco && M.cobertura(sep.traco) > 0.0005) telas.push({ canal: sep.traco, hex: tracoHex, lab: tracoLab, nome: "Traço preto", tom: M.tipoTom(sep.traco), traco: true });
   telas = M.ordenar(telas).map(i => telas[i]);
-  if ($("#baseOn").checked) {
-    const comBase = telas.filter(t => !t.traco && st.base[t.i]);
-    if (comBase.length) telas.unshift({ canal: M.baseBranca(comBase.map(t => t.canal), w, h, { choke: mm(+$("#choke").value) }), hex: "#ffffff", lab: [100, 0, 0], nome: "Base branca", tom: "chapado", base: true });
-  }
+  if (sep.base) telas.unshift({ canal: sep.base, hex: "#ffffff", lab: [100, 0, 0], nome: "Base branca", tom: "chapado", base: true });
   telas.forEach((t, n) => t.num = "#" + String(n + 1).padStart(2, "0"));
   const modo = $("#retModo").value, lpi = +$("#lpi").value, ang = +$("#ang").value;
   telas.forEach(t => {

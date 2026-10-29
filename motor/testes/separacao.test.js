@@ -169,6 +169,25 @@ test("tipoTom, ordenar e agrupar", () => {
   assert.deepEqual(g.map(x => x.join()).sort(), ["0,1", "2"]);
 });
 
+test("pipeline em faixas dá o mesmo resultado que a imagem inteira", () => {
+  const { px, w, h } = arteComTraco();
+  const o = { cores: [{ lab: M.rgb2lab(...VERMELHO) }, { lab: M.rgb2lab(...AMARELO) }], papeis: ["imprimir", "imprimir"], camiseta: M.rgb2lab(...PRETO),
+    tracoCamiseta: true, alcancePx: 5, trapPx: 2, baseOn: true, base: [true, true], chokePx: 1 };
+  const inteiro = M.pipeline(px, w, h, o);
+  const s = M.sobra(o), faixa = 37;
+  const junta = { canais: o.cores.map(() => new Uint8Array(w * h)), traco: new Uint8Array(w * h), base: new Uint8Array(w * h) };
+  for (let y0 = 0; y0 < h; y0 += faixa) {
+    const a = Math.max(0, y0 - s), b = Math.min(h, y0 + faixa + s), fh = b - a;
+    const r = M.pipeline(px.subarray(a * w * 4, b * w * 4), w, fh, o);
+    const de = (y0 - a) * w, ate = de + Math.min(faixa, h - y0) * w;
+    r.canais.forEach((c, k) => junta.canais[k].set(c.subarray(de, ate), y0 * w));
+    junta.traco.set(r.traco.subarray(de, ate), y0 * w); junta.base.set(r.base.subarray(de, ate), y0 * w);
+  }
+  assert.deepEqual(junta.canais, inteiro.canais);
+  assert.deepEqual(junta.traco, inteiro.traco);
+  assert.deepEqual(junta.base, inteiro.base);
+});
+
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {
   const w = 2, h = 1, cheio = new Uint8Array([255, 0]);
   const out = M.simular([{ canal: cheio, hex: "#ffffff" }, { canal: cheio, hex: "#d21e28" }], w, h, "#111111");

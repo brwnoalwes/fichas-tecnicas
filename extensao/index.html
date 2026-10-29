@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Separação Estamparia</title>
+<style>
+:root{--bg:#323232;--panel:#3c3c3c;--ink:#e6e6e6;--muted:#a8a8a8;--line:#4a4a4a;--accent:#d8473a;--ok:#5dbb7d;--warn:#e0a84a}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:12px/1.4 "Segoe UI",Tahoma,sans-serif}
+button,input,select{font:inherit;color:inherit}
+input,select{background:#2a2a2a;border:1px solid var(--line);border-radius:4px;padding:3px 6px;min-width:0}
+input[type=range]{padding:0;border:0;background:transparent}
+input[type=color]{padding:1px;height:24px;width:36px}
+input[type=checkbox]{margin:0}
+.wrap{padding:8px;display:grid;gap:8px}
+.sec{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.sec>h3{margin:0;padding:6px 8px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center}
+.sec>h3 .n{background:var(--accent);color:#fff;border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:10px}
+.sec .bd{padding:8px;display:grid;gap:7px}
+.row{display:flex;gap:6px;align-items:center}
+.row>label{flex:1}
+label.f{display:grid;gap:2px;color:var(--muted)}
+label.f .row output{min-width:46px;text-align:right;color:var(--ink)}
+label.chk{display:flex;gap:6px;align-items:center}
+.btn{background:#4a4a4a;border:1px solid #5a5a5a;border-radius:4px;padding:5px 10px;cursor:pointer}
+.btn:hover{background:#555}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.45;cursor:default}
+.hint{color:var(--muted);font-size:11px}
+.status{font-size:11px;padding:6px 8px;border-radius:4px;background:#2a2a2a}
+.status.erro{color:#ff8b7d}.status.ok{color:var(--ok)}
+.cores{max-height:260px;overflow:auto}
+.cor{display:grid;grid-template-columns:20px 1fr 92px;gap:5px;align-items:center;padding:3px 0;border-bottom:1px solid var(--line)}
+.cor .sw{width:20px;height:20px;border-radius:3px;border:1px solid #0006}
+.cor input[type=text]{width:100%}
+.cor small{color:var(--muted)}
+.prev{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.prev canvas{width:100%;display:block;border-radius:3px;background:#222}
+.telas{display:grid;gap:2px}
+.tela{display:flex;gap:6px;align-items:center;padding:2px 0}
+.tela i{width:12px;height:12px;border-radius:2px;border:1px solid #0008;flex:none}
+.tag{font-size:9.5px;padding:0 5px;border-radius:8px;background:#555;color:#ddd}
+.tag.degrade{background:#6a3d9a}.tag.traco{background:#111}.tag.base{background:#2b5b93}
+.barra{height:4px;background:#2a2a2a;border-radius:2px;overflow:hidden}
+.barra i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="sec"><h3><span class="n">1</span>Arte</h3><div class="bd">
+    <button class="btn pri" id="btnLer">Ler a arte do documento ativo</button>
+    <div class="status" id="stArte">Abra a arte (camadas visíveis = o que será separado) e clique acima.</div>
+  </div></div>
+
+  <div class="sec"><h3><span class="n">2</span>Paleta</h3><div class="bd">
+    <label class="f">Máximo de cores<div class="row"><input type="range" id="maxCores" min="2" max="24" value="16"><output id="oMax">16</output></div></label>
+    <label class="f">Juntar cores parecidas (ΔE)<div class="row"><input type="range" id="mesclar" min="3" max="30" value="7"><output id="oMes">7</output></div></label>
+    <div class="cores" id="paleta"><div class="hint">Leia a arte primeiro.</div></div>
+  </div></div>
+
+  <div class="sec"><h3><span class="n">3</span>Separação</h3><div class="bd">
+    <div class="row"><label class="f">Cor da camiseta<input type="color" id="camiseta" value="#111111"></label>
+      <label class="f">Bordas<select id="bordas"><option value="auto">Automático</option><option value="suaves">Suaves</option><option value="duras">Duras</option></select></label></div>
+    <label class="chk"><input type="checkbox" id="tracoOn" checked> Preto da camiseta dentro da arte vira traço por cima</label>
+    <label class="f">Alcance do traço<div class="row"><input type="range" id="alcance" min="0.2" max="6" step="0.1" value="2"><output id="oAlc"></output></div></label>
+    <label class="f">Trap (cores sob o traço)<div class="row"><input type="range" id="trapMm" min="0" max="1.5" step="0.05" value="0.3"><output id="oTrap"></output></div></label>
+    <label class="chk"><input type="checkbox" id="baseOn" checked> Base branca</label>
+    <label class="f">Retração da base (choke)<div class="row"><input type="range" id="choke" min="0" max="1.5" step="0.05" value="0.2"><output id="oChoke"></output></div></label>
+  </div></div>
+
+  <div class="sec"><h3><span class="n">4</span>Prévia</h3><div class="bd">
+    <div class="prev"><canvas id="cvOrig" title="Arte"></canvas><canvas id="cvProva" title="Prova de cor"></canvas></div>
+    <div class="status" id="stPrev">—</div>
+    <div class="telas" id="telas"></div>
+  </div></div>
+
+  <div class="sec"><h3><span class="n">5</span>Saída</h3><div class="bd">
+    <label class="chk"><input type="checkbox" id="camPrev" checked> Canal “Camiseta (previa)” para ver a prova no PSD</label>
+    <label class="chk"><input type="checkbox" id="substituir" checked> Substituir canais criados antes por este painel</label>
+    <button class="btn pri" id="btnCanais" disabled>Criar canais no PSD</button>
+    <hr style="border:0;border-top:1px solid var(--line);width:100%;margin:2px 0">
+    <div class="row"><label class="f">LPI<input type="number" id="lpi" value="45" min="15" max="85"></label>
+      <label class="f">Ângulo<input type="number" id="ang" value="22.5" step="0.5"></label>
+      <label class="f">dpi retícula<input type="number" id="dpiRet" value="900" step="100"></label></div>
+    <div class="row"><label class="f">Margem (cm)<input type="number" id="margemCm" value="2" step="0.5" min="1"></label>
+      <label class="f">Folga p/ juntar (cm)<input type="number" id="folga" value="0.5" step="0.1" min="0"></label></div>
+    <label class="chk"><input type="checkbox" id="juntar" checked> Juntar no mesmo fotolito cores que não se tocam</label>
+    <label class="chk"><input type="checkbox" id="espelhar"> Espelhar fotolitos</label>
+    <button class="btn" id="btnFotos" disabled>Gerar fotolitos (PDF)</button>
+    <button class="btn" id="btnFicha" disabled>Enviar para a ficha (.ficha.json)</button>
+    <div class="barra"><i id="barra"></i></div>
+    <div class="status" id="stSaida">—</div>
+  </div></div>
+  <div class="hint" style="text-align:center">Só degradês recebem retícula; telas chapadas saem na resolução do documento.</div>
+</div>
+<script src="js/motor.js"></script>
+<script src="js/painel.js"></script>
+</body>
+</html>

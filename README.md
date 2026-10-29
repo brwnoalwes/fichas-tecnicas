@@ -36,6 +36,21 @@ Os dados ficam no navegador; em **Arquivo → Salvar em um arquivo…** escolha 
 | `motor/testes/` | Testes do motor: `npm test` |
 | `separacao.html` | Página de teste do motor: carregue uma arte e veja paleta, telas e prova de cor |
 | `docs/plugin-separacao.md` | Plano da extensão própria de separação para o Photoshop 2020 |
+| `extensao/` | Extensão “Separacao Estamparia” (CEP, Photoshop 2020+): painel + `jsx/host.jsx` |
+
+## Extensão de separação (Photoshop 2020)
+
+1. Instalar/atualizar: `powershell -ExecutionPolicy Bypass -File extensao\instalar.ps1` (copia para
+   `%APPDATA%\Adobe\CEP\extensions\com.estamparia.separacao`, junto com o motor).
+2. Abrir o Photoshop → **Janela → Extensões → Separacao Estamparia**.
+3. Com a arte aberta: **Ler a arte** → ajustar paleta/nomes/papéis → **Criar canais no PSD**
+   (um canal de cor especial por tela, na ordem de impressão, + “Camiseta (previa)”) →
+   **Gerar fotolitos (PDF)** (pasta “Fotolitos - …” ao lado do PSD; marcas de registro, título,
+   retícula nativa só nos degradês, cores que não se tocam juntas) → **Enviar para a ficha**.
+4. Erros do painel: depuração remota em `http://localhost:8099` com o Photoshop aberto.
+
+Fora do Photoshop, `extensao/index.html` abre em modo de teste (copie `motor/separacao.js` para
+`extensao/js/motor.js`).
 
 Depois de editar `src/fichas.template.html`, rode `node src/build.mjs` e faça commit dos dois arquivos.
 

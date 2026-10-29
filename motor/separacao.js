@@ -20,11 +20,15 @@
  * (sombras incluídas), canais chapados com borda suave, só o glow em retícula, traço preto por cima,
  * cores distantes dividindo fotolito.
  */
+// Sintaxe até ES2017: o painel do Photoshop 2020 (CEP 9) roda num Chromium 61 — sem "??" nem "?.".
+// No painel com Node ligado, "module" também existe; por isso publica nos dois lugares.
 (function (raiz, fabrica) {
-  if (typeof module === "object" && module.exports) module.exports = fabrica();
-  else raiz.MotorSeparacao = fabrica();
-})(typeof self !== "undefined" ? self : this, function () {
+  const m = fabrica();
+  if (typeof module === "object" && module && module.exports) module.exports = m;
+  if (raiz) raiz.MotorSeparacao = m;
+})(typeof window !== "undefined" ? window : typeof self !== "undefined" ? self : this, function () {
   "use strict";
+  const def = (v, padrao) => v === undefined || v === null ? padrao : v;
 
   /* ---------- cor ---------- */
   const lin = c => { c /= 255; return c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92; };
@@ -70,7 +74,7 @@
    *          sugerido para a cor de fundo (cor dominante nas bordas), ou -1 se a arte tem transparência.
    */
   function paleta(px, w, h, o = {}) {
-    const maxCores = o.maxCores || 8, mesclarDE = o.mesclarDE ?? 12, coberturaMin = o.coberturaMin ?? 0.004;
+    const maxCores = o.maxCores || 8, mesclarDE = def(o.mesclarDE, 12), coberturaMin = def(o.coberturaMin, 0.004);
     const N = w * h, passo = Math.max(1, Math.floor(N / (o.amostras || 40000)));
     const pts = [];
     let transparentes = 0;
@@ -169,7 +173,7 @@
   function separar(px, w, h, o) {
     const N = w * h, cores = o.cores.map(c => c.lab), K = cores.length;
     const ref = o.camiseta ? [...cores, o.camiseta] : cores; // último = camiseta (não imprime)
-    const R = ref.length, tolMix = o.tolMistura ?? 14, tolFora = o.tolFora ?? 25, duras = o.bordas === "duras";
+    const R = ref.length, tolMix = def(o.tolMistura, 14), tolFora = def(o.tolFora, 25), duras = o.bordas === "duras";
     const auto = !o.bordas || o.bordas === "auto", iCam = o.camiseta ? K : -1;
     const canais = ref.map(() => new Uint8Array(N));
     const cache = new Map();
@@ -218,7 +222,7 @@
    * cores, até `alcance` px). O resto da cor da camiseta é fundo e continua vazando.
    */
   function tracoPreto(camiseta, canais, w, h, o = {}) {
-    const N = w * h, perto = dilatar(uniao(canais, N), w, h, Math.round(o.alcance ?? 6)), out = new Uint8Array(N);
+    const N = w * h, perto = dilatar(uniao(canais, N), w, h, Math.round(def(o.alcance, 6))), out = new Uint8Array(N);
     for (let i = 0; i < N; i++) out[i] = Math.min(camiseta[i], perto[i]);
     return out;
   }
@@ -267,7 +271,7 @@
    */
   function agrupar(canais, w, h, o = {}) {
     const f = Math.max(1, Math.ceil(Math.max(w, h) / 360)), sw = Math.ceil(w / f), sh = Math.ceil(h / f);
-    const m = Math.max(1, Math.round((o.margem ?? 20) / f)), fixos = o.fixos || [];
+    const m = Math.max(1, Math.round((def(o.margem, 20)) / f)), fixos = o.fixos || [];
     const mask = canais.map(c => {
       const s = new Uint8Array(sw * sh);
       for (let y = 0; y < h; y++) for (let x = 0, r = y * w, rs = Math.floor(y / f) * sw; x < w; x++) if (c[r + x] > 25) s[rs + Math.floor(x / f)] = 255;
@@ -323,7 +327,7 @@
    * @returns Uint8Array binário (0 ou 255)
    */
   function reticular(c, w, h, o = {}) {
-    const cel = (o.dpi || 300) / (o.lpi || 45), ang = (o.angulo ?? 22.5) * Math.PI / 180;
+    const cel = (o.dpi || 300) / (o.lpi || 45), ang = (def(o.angulo, 22.5)) * Math.PI / 180;
     const cs = Math.cos(ang) / cel, sn = Math.sin(ang) / cel, out = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const v = c[y * w + x] / 255;
@@ -352,7 +356,42 @@
     return out;
   }
 
+  /* ---------- pipeline completo (página de teste e extensão do Photoshop) ---------- */
+  /**
+   * separar → traço → trap → base, numa chamada. Opera só com vizinhança pequena, então pode rodar
+   * em faixas da imagem (com sobra de `sobra(o)` px em cima e embaixo) na resolução cheia.
+   * @param o.cores   [{lab}] todas as cores da paleta exceto a camiseta
+   * @param o.papeis  por cor: "imprimir" | "traco" | "ignorar"
+   * @param o.camiseta lab da camiseta; o.bordas; o.tracoCamiseta (bool); o.alcancePx; o.trapPx
+   * @param o.baseOn (bool); o.base [bool por cor]; o.chokePx
+   * @returns {{canais: Uint8Array[], traco: Uint8Array|null, base: Uint8Array|null, foraDaPaleta: number}}
+   */
+  function pipeline(px, w, h, o) {
+    const N = w * h, papel = o.papeis || o.cores.map(() => "imprimir");
+    const sep = separar(px, w, h, { cores: o.cores, camiseta: o.camiseta, bordas: o.bordas });
+    const canais = sep.canais.slice(), idxCor = papel.map((p, k) => p !== "traco" ? k : -1).filter(k => k >= 0);
+    let traco = null;
+    canais.forEach((c, k) => {
+      if (papel[k] !== "traco") return;
+      traco = traco || new Uint8Array(N);
+      for (let i = 0; i < N; i++) if (c[i] > traco[i]) traco[i] = c[i];
+    });
+    if (o.tracoCamiseta && sep.camiseta) {
+      const t2 = tracoPreto(sep.camiseta, idxCor.map(k => canais[k]), w, h, { alcance: o.alcancePx });
+      if (traco) { for (let i = 0; i < N; i++) if (t2[i] > traco[i]) traco[i] = t2[i]; } else traco = t2;
+    }
+    if (traco) { const presos = trap(idxCor.map(k => canais[k]), traco, w, h, o.trapPx); idxCor.forEach((k, n) => { canais[k] = presos[n]; }); }
+    let base = null;
+    if (o.baseOn) {
+      const usar = idxCor.filter(k => papel[k] === "imprimir" && (!o.base || o.base[k]));
+      if (usar.length) base = baseBranca(usar.map(k => canais[k]), w, h, { choke: o.chokePx });
+    }
+    return { canais, traco, base, foraDaPaleta: sep.foraDaPaleta };
+  }
+  /** Sobra (px) que cada faixa precisa ler acima e abaixo para o resultado sair igual ao da imagem inteira. */
+  const sobra = o => Math.ceil((o.tracoCamiseta ? o.alcancePx || 0 : 0) + (o.trapPx || 0) + (o.baseOn ? o.chokePx || 0 : 0)) + 2;
+
   const cobertura = c => { let s = 0; for (let i = 0; i < c.length; i++) s += c[i]; return s / 255 / c.length; };
 
-  return { paleta, separar, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
+  return { paleta, separar, pipeline, sobra, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
 });
