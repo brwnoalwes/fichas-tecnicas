@@ -421,6 +421,38 @@
     return out;
   }
 
+  /* ---------- marcas de registro copiadas do gabarito ---------- */
+  /**
+   * Partes de uma tela que são marcas de registro: manchas de tinta (vizinhança 8) que ficam INTEIRAS
+   * dentro das marcas do gabarito (`zona`, já com folga). A grade do gabarito cobre a página toda, então
+   * não basta apagar o que cai nela: um traço da arte que cruza a posição de uma marca continua ligado ao
+   * desenho e não é marca. @returns Uint8Array, 255 = pixel de marca (sai da prova; fica no fotolito)
+   */
+  function marcasDoGabarito(c, w, h, zona, lim) {
+    lim = def(lim, 25);
+    const N = w * h, out = new Uint8Array(N), visto = new Uint8Array(N), fila = new Int32Array(N);
+    for (let s = 0; s < N; s++) {
+      if (visto[s] || c[s] <= lim || !zona[s]) continue;
+      // percorre a mancha inteira; se algum pixel sair da zona, é arte
+      let ini = 0, fim = 0, dentro = true;
+      fila[fim++] = s; visto[s] = 1;
+      while (ini < fim) {
+        const i = fila[ini++], x = i % w, y = (i - x) / w;
+        if (!zona[i]) dentro = false;
+        for (let dy = -1; dy <= 1; dy++) {
+          const yy = y + dy; if (yy < 0 || yy >= h) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx; if (xx < 0 || xx >= w) continue;
+            const j = yy * w + xx;
+            if (!visto[j] && c[j] > lim) { visto[j] = 1; fila[fim++] = j; }
+          }
+        }
+      }
+      if (dentro) for (let k = 0; k < fim; k++) out[fila[k]] = 255;
+    }
+    return out;
+  }
+
   /* ---------- prova de cor ---------- */
   /**
    * @param camadas [{canal, hex}] na ordem de impressão (base primeiro)
@@ -501,5 +533,5 @@
 
   const cobertura = c => { let s = 0; for (let i = 0; i < c.length; i++) s += c[i]; return s / 255 / c.length; };
 
-  return { paleta, separar, pipeline, sobra, limpar, limiar, zonaDegrade, simularFilme, fracaoDegrade, filme, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
+  return { paleta, separar, pipeline, sobra, limpar, limiar, marcasDoGabarito, zonaDegrade, simularFilme, fracaoDegrade, filme, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
 });

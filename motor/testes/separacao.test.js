@@ -291,6 +291,19 @@ test("simularFilme: chapa fora do degradê, mantém o tom dentro", () => {
   assert.equal(s[40 * w + 72], 0, "abaixo do ponto mínimo some");
 });
 
+test("marcas do gabarito: some a marca isolada, fica a arte que passa por cima da grade", () => {
+  const w = 60, h = 30, N = w * h, c = new Uint8Array(N), zona = new Uint8Array(N);
+  // duas marcas no gabarito: quadrados 8×8 em (5,5) e (40,5)
+  for (const [mx, my] of [[5, 5], [40, 5]]) for (let y = my; y < my + 8; y++) for (let x = mx; x < mx + 8; x++) zona[y * w + x] = 255;
+  // canal: cruz copiada dentro da 1ª marca; traço da arte atravessando a 2ª marca e seguindo para fora
+  for (let k = 6; k < 12; k++) { c[8 * w + k] = 255; c[k * w + 8] = 255; }
+  for (let x = 30; x < 58; x++) c[9 * w + x] = 255;
+  const m = M.marcasDoGabarito(c, w, h, zona);
+  assert.equal(m[8 * w + 8], 255, "a cruz copiada é marca");
+  assert.equal(m[9 * w + 44], 0, "o traço da arte dentro da 2ª marca não é marca");
+  assert.equal(m[9 * w + 31], 0);
+});
+
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {
   const w = 2, h = 1, cheio = new Uint8Array([255, 0]);
   const out = M.simular([{ canal: cheio, hex: "#ffffff" }, { canal: cheio, hex: "#d21e28" }], w, h, "#111111");

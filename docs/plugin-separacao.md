@@ -66,11 +66,25 @@ cores que dividem a folha de fotolito. Separação por **região** (seleção no
 por região — "Pele" × "Amarelo dos crânios" com tons parecidos viram tintas diferentes) é feita na
 extensão.
 
+## Gabarito de registro da loja
+
+`Serigrafia\Gabarito 33x46,67.pdf`: página do tamanho da arte (33 × 46,67 cm) com uma grade de 23
+símbolos únicos (♠ ♥ ♦ ♣ ♪ ♫ ☼ θ ☺ ◊ □ ▲ ╬ † # Δ ₳ @ $ % & [] =), cada um ao lado de uma cruz, em 5
+colunas (2 à esquerda, cruzes no centro, 2 à direita) + cantoneiras e barra de centro (linhas). No
+PDF: uma imagem JPEG em x 41,08 pt, y 4,19 pt, 853,5 × 1314,9 pt, e 12 linhas.
+
+Uso: o gabarito é o fundo de todos os canais; em cada canal o separador copia os pares símbolo+cruz
+próximos da arte. O gabarito impresso fica fixo no berço: o fotolito encaixa nos símbolos na gravação
+e no registro das cores — por isso várias cores podem dividir a mesma folha de fotolito.
+
+Na extensão (modo canais): fotolito **1:1** com a arte (sem margem, cruzes ou título da extensão); a
+prova estampada esconde as marcas copiadas do gabarito (mancha inteira dentro de uma marca =
+marca; arte que cruza a grade fica). Os fotolitos mantêm as marcas.
+
 ## A fazer
 
-- **Gabarito de registro**: a loja usa um gabarito próprio para as marcas de registro dos
-  fotolitos (ver `09_GABARITO.psd/.pdf` na pasta do Sukuna). Trocar as cruzes geradas pelo painel
-  pelo gabarito da loja.
+- **Marcas automáticas**: a extensão escolher, para cada canal, os pares símbolo+cruz do gabarito
+  mais próximos da arte (sem repetir entre cores da mesma folha) e colocá-los no canal/fotolito.
 - Corte de ponto mínimo/máximo na retícula e tira de teste de retícula.
 
 ## Fases

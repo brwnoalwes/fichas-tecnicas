@@ -153,14 +153,17 @@ function gerarFotolitos(s) {
                     var f = a.fotolitos[k], m = Math.round(a.margemCm / 2.54 * f.dpi);
                     var d = _abrirRaw(f.raw, f.w, f.h, f.dpi);
                     try {
-                        d.resizeCanvas(UnitValue(f.w + 2 * m, "px"), UnitValue(f.h + 2 * m, "px"), AnchorPosition.MIDDLECENTER);
-                        var W = f.w + 2 * m, H = f.h + 2 * m, t = Math.round(m * 0.55);
-                        _marca(d, W / 2, m / 2, t); _marca(d, W / 2, H - m / 2, t); _marca(d, m / 2, H / 2, t); _marca(d, W - m / 2, H / 2, t);
-                        var cam = d.artLayers.add(); cam.kind = LayerKind.TEXT;
-                        var ti = cam.textItem;
-                        ti.contents = f.titulo; ti.size = 11; ti.color = _preto();
-                        ti.position = [UnitValue(m + t, "px"), UnitValue(Math.round(m * 0.62), "px")];
-                        d.flatten();
+                        // marcas = false: fotolito 1:1 com a arte e o gabarito da loja (as marcas já vêm nos canais)
+                        if (a.marcas !== false) {
+                            d.resizeCanvas(UnitValue(f.w + 2 * m, "px"), UnitValue(f.h + 2 * m, "px"), AnchorPosition.MIDDLECENTER);
+                            var W = f.w + 2 * m, H = f.h + 2 * m, t = Math.round(m * 0.55);
+                            _marca(d, W / 2, m / 2, t); _marca(d, W / 2, H - m / 2, t); _marca(d, m / 2, H / 2, t); _marca(d, W - m / 2, H / 2, t);
+                            var cam = d.artLayers.add(); cam.kind = LayerKind.TEXT;
+                            var ti = cam.textItem;
+                            ti.contents = f.titulo; ti.size = 11; ti.color = _preto();
+                            ti.position = [UnitValue(m + t, "px"), UnitValue(Math.round(m * 0.62), "px")];
+                            d.flatten();
+                        }
                         // PDF em 1 bit. Com `reticula`, o .raw é o canal em tons e o Photoshop faz a
                         // retícula de meio-tom nativa na saída (canais vindos do BBOXSTAMP/manual);
                         // sem, limiar 50% (fotolito já pronto, ou canal chapado ampliado para a saída)

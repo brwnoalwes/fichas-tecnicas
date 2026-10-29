@@ -33,7 +33,42 @@ const barra = f => { $("#barra").style.width = Math.round(f * 100) + "%"; };
 
 /* ---------- 1. ler a arte ---------- */
 const urlArquivo = p => "file:///" + encodeURI(p.replace(/\\/g, "/")).replace(/#/g, "%23") + "?t=" + Date.now();
-function modoFonte(f) { st.fonte = f; document.body.classList.toggle("modo-canais", f === "canais"); }
+function modoFonte(f) {
+  st.fonte = f; document.body.classList.toggle("modo-canais", f === "canais");
+  // canais feitos por você já trazem as marcas do gabarito: fotolito 1:1, sem margem/cruzes/título
+  $("#marcasExt").checked = f !== "canais";
+}
+
+/* ---------- gabarito de registro da loja ---------- */
+const imagemDe = arq => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("Não consegui abrir " + arq)); im.src = urlArquivo(arq); });
+// máscara das marcas do gabarito (resolução cheia e prévia), para escondê-las na prova; os fotolitos mantêm as marcas
+async function prepararGabarito() {
+  st.gabMask = null; st.gabMaskPrev = null;
+  const arq = $("#gabarito").value.trim();
+  if (!arq) { status("#stGab", "Sem gabarito: a prova mostra as marcas que estão nos canais."); return; }
+  if (!st.W || !fs) return;
+  try {
+    if (!fs.existsSync(arq)) throw new Error("Gabarito não encontrado: " + arq);
+    if (!fs.existsSync(TMP)) fs.mkdirSync(TMP);
+    status("#stGab", "Lendo o gabarito…"); await espera();
+    let g;
+    if (/\.pdf$/i.test(arq)) g = window.Gabarito.lerPDF(fs, path, nreq("zlib"), arq, TMP);
+    else { const im = await imagemDe(arq); g = { paginaW: im.naturalWidth, paginaH: im.naturalHeight, imagens: [{ arquivo: arq, x: 0, y: 0, w: im.naturalWidth, h: im.naturalHeight }], linhas: [] }; }
+    const dif = Math.abs(g.paginaW / g.paginaH - st.W / st.H) / (st.W / st.H);
+    st.gabMask = await window.Gabarito.mascara(g, st.W, st.H, 0.3 / 25.4 * st.dpi, M, imagemDe);
+    st.gabMaskPrev = reduzirMascara(st.gabMask, st.W, st.H, st.prev.w, st.prev.h).map(v => v > 0 ? 255 : 0);
+    status("#stGab", dif > 0.01 ? "Gabarito carregado, mas com proporção diferente da arte: confira o tamanho." : "Gabarito carregado: as marcas dele não aparecem na prova (continuam nos fotolitos).", dif > 0.01 ? "erro" : "ok");
+  } catch (e) { status("#stGab", e.message, "erro"); }
+}
+$("#btnGabarito").onclick = async () => {
+  try {
+    const r = window.cep.fs.showOpenDialog(false, false, "Gabarito de registro", "", ["pdf", "png", "jpg", "jpeg"]);
+    if (r && r.data && r.data[0]) { $("#gabarito").value = r.data[0]; salvarPreferencias(); await prepararGabarito(); separar(); }
+  } catch (e) { status("#stGab", "Não consegui abrir a janela de arquivos: digite o caminho no campo.", "erro"); }
+};
+$("#gabarito").addEventListener("change", async () => { salvarPreferencias(); await prepararGabarito(); separar(); });
+$("#escondeMarcas").addEventListener("change", () => { salvarPreferencias(); separar(); });
+const marcasNaProva = () => st.fonte === "canais" && $("#escondeMarcas").checked;
 $("#btnLer").onclick = async () => {
   try {
     modoFonte("auto");
@@ -69,6 +104,7 @@ $("#btnCanaisDoc").onclick = async () => {
         const g = cv.getContext("2d"); g.putImageData(new ImageData(r.rgba, r.W, r.H), 0, 0);
       }, true);
       usarCanais(r.canais);
+      await prepararGabarito(); separar();
     } else {
       status("#stArte", inf.caminho ? "PSD com alterações não salvas: lendo canal por canal no Photoshop (lento). Salve (Ctrl+S) para ser rápido." : "Documento nunca salvo: lendo canal por canal no Photoshop (lento).");
       const arte = await host("exportarArte", { pasta: TMP });
@@ -76,6 +112,7 @@ $("#btnCanaisDoc").onclick = async () => {
       await carregarImagem(urlArquivo(arte.png), true);
       const r = await host("exportarCanais", { pasta: TMP });
       usarCanais(r.canais);
+      await prepararGabarito(); separar();
     }
   } catch (e) { status("#stArte", e.message, "erro"); }
 };
@@ -316,7 +353,15 @@ function finalizarPlano(plano, fora, assin, camHex) {
   // canais do documento já estão em resolução cheia: os .raw lidos do PSD são as telas
   if (canais) st.raws = { assin, arqs: plano.map(t => t.raw) };
 
-  const prova = M.simular(plano.map(t => ({ canal: t.filmePrev, hex: t.hex })), p.w, p.h, camHex);
+  // marcas copiadas do gabarito não vão para a camiseta: saem da prova (os fotolitos continuam com elas)
+  const mk = marcasNaProva() && st.gabMaskPrev;
+  const semMarcas = t => {
+    if (!mk) return t.filmePrev;
+    const rem = M.marcasDoGabarito(t.canal, p.w, p.h, mk), o = t.filmePrev.slice();
+    for (let i = 0; i < o.length; i++) if (rem[i]) o[i] = 0;
+    return o;
+  };
+  const prova = M.simular(plano.map(t => ({ canal: semMarcas(t), hex: t.hex })), p.w, p.h, camHex);
   const cv = $("#cvProva"); cv.width = p.w; cv.height = p.h; cv.getContext("2d").putImageData(new ImageData(prova, p.w, p.h), 0, 0);
   status("#stPrev", `${plano.length} telas em ${st.grupos.length} fotolitos` + (fora > 0.01 ? ` · ${fmt(fora * 100)}% fora da paleta: aumente o máximo de cores` : ""), fora > 0.01 ? "erro" : "ok");
   $("#telas").innerHTML = plano.map(t => `<div class="tela"><i style="background:${t.hex}"></i><b>${t.num}</b> ${esc(t.nome)}
@@ -416,7 +461,7 @@ async function fotolitosDosCanais() {
       raw = path.join(TMP, "fotolito.raw"); fs.writeFileSync(raw, u);
     }
     barra(k / N); status("#stSaida", `Fotolito ${k + 1} de ${N} (${nums}): gravando o PDF no Photoshop…`);
-    const r = await host("gerarFotolitos", { saida, margemCm: +$("#margemCm").value, espelhar: $("#espelhar").checked, fotolitos: [{
+    const r = await host("gerarFotolitos", { saida, margemCm: +$("#margemCm").value, espelhar: $("#espelhar").checked, marcas: $("#marcasExt").checked, fotolitos: [{
       arquivo: (nums + " " + nomes).replace(/[\\/:*?"<>|]/g, "-") + ".pdf", raw, w: st.W, h: st.H, dpi: st.dpi, saidaDpi: dpiOut,
       reticula: ret ? { lpi: +$("#lpi").value, angulo: +$("#ang").value } : null,
       titulo: nums + "  " + nomes + "   |   " + nomeBase() + "   |   " + (ret ? "retícula " + $("#lpi").value + " lpi " + $("#ang").value + "°" : "chapado") + " · " + dpiOut + " dpi" +
@@ -446,7 +491,7 @@ $("#btnFotos").onclick = () => tarefa("#btnFotos", async () => {
     } finally { fs.closeSync(fd); }
     const ret = ts.some(t => t.ret >= 0.02);
     status("#stSaida", `Fotolito ${k + 1} de ${N}: gravando o PDF no Photoshop…`);
-    const r = await host("gerarFotolitos", { saida, margemCm: +$("#margemCm").value, espelhar: $("#espelhar").checked, fotolitos: [{
+    const r = await host("gerarFotolitos", { saida, margemCm: +$("#margemCm").value, espelhar: $("#espelhar").checked, marcas: $("#marcasExt").checked, fotolitos: [{
       arquivo: (nums + " " + nomes).replace(/[\\/:*?"<>|]/g, "-") + ".pdf", raw, w: W2, h: H2, dpi: sd.dpi,
       titulo: nums + "  " + nomes + "   |   " + nomeBase() + "   |   " + (ret ? "chapado + retícula " + $("#lpi").value + " lpi " + $("#ang").value + "°" : "chapado") + " · " + sd.dpi + " dpi" +
         (ts.length > 1 ? "   |   " + ts.length + " telas: grave cada cor na sua tela, bloqueando as outras áreas" : ""),
@@ -505,10 +550,19 @@ $("#btnProva").onclick = () => tarefa("#btnProva", async () => {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const o = y * L + 1 + x * 3; rgb[o] = cam[0]; rgb[o + 1] = cam[1]; rgb[o + 2] = cam[2]; }
   for (let i = 0; i < N; i++) {
     const c = M.hex2rgb(st.plano[i].hex), W2 = W * s;
+    // marcas copiadas do gabarito nesta tela: não vão para a camiseta (o fotolito continua com elas)
+    let mk = null;
+    if (marcasNaProva() && st.gabMask) {
+      status("#stSaida", `Prova estampada: tela ${i + 1} de ${N}, achando as marcas do gabarito…`); await espera();
+      const buf = fs.readFileSync(raws.arqs[i]), tinta = new Uint8Array(buf.length);
+      for (let q = 0; q < buf.length; q++) tinta[q] = 255 - buf[q];
+      mk = M.marcasDoGabarito(tinta, W, H, st.gabMask);
+    }
     await porFaixasFilme(raws.arqs, [i], (filmes, y0, nl) => {
       const f = filmes[0];
       // fotolito na resolução de saída → fração de tinta em cada pixel da arte (os pontos aparecem)
       for (let y = 0; y < nl; y++) for (let x = 0; x < W; x++) {
+        if (mk && mk[(y0 + y) * W + x]) continue;
         let n = 0;
         for (let dy = 0; dy < s; dy++) { const r = (y * s + dy) * W2 + x * s; for (let dx = 0; dx < s; dx++) if (f[r + dx]) n++; }
         if (!n) continue;
@@ -541,7 +595,7 @@ SAIDAS.forEach(x => {
 ["camiseta", "camisetaCanais", "bordas", "tracoOn", "baseOn", "juntar", "folga", "pontoMin", "pontoMax"].forEach(id => $("#" + id).addEventListener("input", separar));
 // v2: retícula mista e "passagem entre cores" com degradê por padrão (a v1 guardava "auto")
 const CHAVE_PREF = "estamparia-separacao-v2";
-const PREF = ["maxCores", "mesclar", "bordas", "tracoOn", "alcance", "trapMm", "baseOn", "choke", "raioDeg", "pontoMin", "pontoMax", "camPrev", "substituir", "lpi", "ang", "dpiRet", "margemCm", "folga", "juntar", "espelhar"];
+const PREF = ["maxCores", "mesclar", "bordas", "tracoOn", "alcance", "trapMm", "baseOn", "choke", "raioDeg", "pontoMin", "pontoMax", "camPrev", "substituir", "lpi", "ang", "dpiRet", "margemCm", "folga", "juntar", "espelhar", "gabarito", "escondeMarcas"];
 function salvarPreferencias() {
   try { localStorage.setItem(CHAVE_PREF, JSON.stringify(PREF.reduce((o, id) => { const el = $("#" + id); o[id] = el.type === "checkbox" ? el.checked : el.value; return o; }, {}))); } catch (e) { /* sem armazenamento */ }
 }
