@@ -198,6 +198,25 @@ test("limiar: fotolito chapado sai só preto ou branco", () => {
   assert.deepEqual([...M.limiar(new Uint8Array([0, 60, 127, 128, 200, 255]))], [0, 0, 0, 255, 255, 255]);
 });
 
+test("regiões: o mesmo tom em duas regiões vira duas tintas, sem sobra nem sobreposição", () => {
+  // duas manchas vermelhas iguais: a da esquerda é a região "Cabelo", o resto é a outra região
+  const w = 100, h = 40, N = w * h, px = new Uint8ClampedArray(N * 4);
+  for (let i = 0; i < N; i++) {
+    const x = i % w, y = (i - x) / w, mancha = (x > 10 && x < 30 || x > 60 && x < 80) && y > 10 && y < 30;
+    const c = mancha ? VERMELHO : PRETO; px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = 255;
+  }
+  const cabelo = new Uint8Array(N); for (let i = 0; i < N; i++) if (i % w < 45) cabelo[i] = 255;
+  const resto = cabelo.map(v => 255 - v);
+  const verm = { lab: M.rgb2lab(...VERMELHO) };
+  const r = M.pipeline(px, w, h, { camiseta: M.rgb2lab(...PRETO), regioes: [{ mascara: cabelo, cores: [verm] }, { mascara: resto, cores: [verm] }] });
+  assert.equal(r.canais.length, 2);
+  assert.equal(r.canais[0][20 * w + 20], 255); assert.equal(r.canais[0][20 * w + 70], 0);
+  assert.equal(r.canais[1][20 * w + 70], 255); assert.equal(r.canais[1][20 * w + 20], 0);
+  // as duas juntas reproduzem a separação sem regiões
+  const unica = M.pipeline(px, w, h, { camiseta: M.rgb2lab(...PRETO), cores: [verm] });
+  for (let i = 0; i < N; i++) assert.equal(r.canais[0][i] + r.canais[1][i], unica.canais[0][i]);
+});
+
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {
   const w = 2, h = 1, cheio = new Uint8Array([255, 0]);
   const out = M.simular([{ canal: cheio, hex: "#ffffff" }, { canal: cheio, hex: "#d21e28" }], w, h, "#111111");

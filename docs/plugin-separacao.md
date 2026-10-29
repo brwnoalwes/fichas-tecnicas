@@ -52,18 +52,26 @@ Análise do PSD separado à mão no Photoshop 2020 (3898 × 5512 px, 300 dpi, 33
 - **Canais chapados**: 99% dos pixels são 0 ou 255, com borda suavizada. Só o **#17 Glow** é
   degradê (88%) e só ele foi reticulado (fotolito exportado a 900 dpi; os outros a 300 dpi).
 - **#16 Preto 1 é traço impresso por cima** (contorno + hachura, 20,7% da área), não vazado.
-- **Telas compartilhadas**: cores que não se tocam dividem o fotolito ("#01 #02 #04 #05",
-  "#09 #18"); cada uma é puxada numa passada com as outras áreas bloqueadas.
+- **Fotolito compartilhado (economia de filme)**: cores que não se tocam saem na mesma folha
+  ("#01 #02 #04 #05", "#09 #18"). **Uma tela, uma cor, sempre**: a folha é gravada uma vez em cada
+  tela, bloqueando as outras áreas. Duas cores na mesma tela é inviável (limpar e trocar a tinta a
+  cada passada).
 - **Marcas de registro e número da tela** em todos os canais; ordem de impressão = numeração.
 - Nesta versão não há canal de base branca (a versão anterior, de 8 telas, tinha "01_BASE BRANCA").
 
 Levado para o motor (`motor/separacao.js`) e para `separacao.html`: paleta de até 24 tintas,
 bordas "automáticas" (corte seco entre tintas, degradê só contra a camiseta), traço preto por cima
 com trap, retícula só nas telas em degradê, ordem claro → escuro → degradê → traço, e sugestão de
-telas que dividem fotolito. Diferença que continua: a paleta automática agrupa por **cor**, não por
-**região** — o mesmo tom pode aparecer em várias partes da arte e aí não divide tela. Separar por
-região (ex.: "Pele" × "Amarelo dos crânios" com tons parecidos) fica para a extensão, com seleção de
-área no Photoshop.
+cores que dividem a folha de fotolito. Separação por **região** (seleção no Photoshop, uma paleta
+por região — "Pele" × "Amarelo dos crânios" com tons parecidos viram tintas diferentes) é feita na
+extensão.
+
+## A fazer
+
+- **Gabarito de registro**: a loja usa um gabarito próprio para as marcas de registro dos
+  fotolitos (ver `09_GABARITO.psd/.pdf` na pasta do Sukuna). Trocar as cruzes geradas pelo painel
+  pelo gabarito da loja.
+- Corte de ponto mínimo/máximo na retícula e tira de teste de retícula.
 
 ## Fases
 

@@ -29,7 +29,10 @@ label.chk{display:flex;gap:6px;align-items:center}
 .hint{color:var(--muted);font-size:11px}
 .status{font-size:11px;padding:6px 8px;border-radius:4px;background:#2a2a2a}
 .status.erro{color:#ff8b7d}.status.ok{color:var(--ok)}
-.cores{max-height:260px;overflow:auto}
+.cores{max-height:340px;overflow:auto}
+.reg{display:flex;gap:6px;align-items:center;margin:8px 0 2px;padding:4px 6px;background:#2a2a2a;border-radius:4px}
+.reg input[type=text]{flex:1;font-weight:600}
+.reg .btn{padding:1px 7px}
 .cor{display:grid;grid-template-columns:20px 1fr 92px;gap:5px;align-items:center;padding:3px 0;border-bottom:1px solid var(--line)}
 .cor .sw{width:20px;height:20px;border-radius:3px;border:1px solid #0006}
 .cor input[type=text]{width:100%}
@@ -52,8 +55,11 @@ label.chk{display:flex;gap:6px;align-items:center}
     <div class="status" id="stArte">Abra a arte (camadas visíveis = o que será separado) e clique acima.</div>
   </div></div>
 
-  <div class="sec"><h3><span class="n">2</span>Paleta</h3><div class="bd">
-    <label class="f">Máximo de cores<div class="row"><input type="range" id="maxCores" min="2" max="24" value="16"><output id="oMax">16</output></div></label>
+  <div class="sec"><h3><span class="n">2</span>Regiões e paleta</h3><div class="bd">
+    <div class="hint">Selecione uma área no Photoshop (laço, varinha, intervalo de cores…) e adicione como região: ela ganha tintas próprias, mesmo com tons parecidos aos de outras áreas.</div>
+    <div class="row"><input type="text" id="nomeRegiao" placeholder="Nome (ex.: Pele, Cabelo, Crânios)" style="flex:1"><button class="btn" id="btnRegiao">+ Região da seleção</button></div>
+    <div class="status" id="stReg">Sem regiões: a arte inteira usa uma paleta só.</div>
+    <label class="f">Máximo de cores (resto da arte)<div class="row"><input type="range" id="maxCores" min="2" max="24" value="16"><output id="oMax">16</output></div></label>
     <label class="f">Juntar cores parecidas (ΔE)<div class="row"><input type="range" id="mesclar" min="3" max="30" value="7"><output id="oMes">7</output></div></label>
     <div class="cores" id="paleta"><div class="hint">Leia a arte primeiro.</div></div>
   </div></div>
@@ -86,7 +92,8 @@ label.chk{display:flex;gap:6px;align-items:center}
       <label class="f">dpi do fotolito<input type="number" id="dpiRet" value="900" step="100" min="300"></label></div>
     <div class="row"><label class="f">Margem (cm)<input type="number" id="margemCm" value="2" step="0.5" min="1"></label>
       <label class="f">Folga p/ juntar (cm)<input type="number" id="folga" value="0.5" step="0.1" min="0"></label></div>
-    <label class="chk"><input type="checkbox" id="juntar" checked> Juntar no mesmo fotolito cores que não se tocam</label>
+    <label class="chk"><input type="checkbox" id="juntar" checked> Economizar fotolito: cores que não se encostam na mesma folha</label>
+    <div class="hint">Cada cor continua na sua própria tela: a folha é gravada uma vez por tela, bloqueando as outras áreas.</div>
     <label class="chk"><input type="checkbox" id="espelhar"> Espelhar fotolitos</label>
     <button class="btn" id="btnFotos" disabled>Gerar fotolitos (PDF)</button>
     <button class="btn" id="btnFicha" disabled>Enviar para a ficha (.ficha.json)</button>

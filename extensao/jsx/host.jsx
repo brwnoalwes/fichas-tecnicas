@@ -180,5 +180,43 @@ function gerarFotolitos(s) {
     } catch (e) { return _erro(e); }
 }
 
+/**
+ * Salva a seleção atual como máscara de região: .raw 8 bits do tamanho do documento,
+ * 255 = selecionado (respeita seleção suavizada/difusa). A seleção do usuário não é alterada.
+ * a = {arquivo}
+ */
+function exportarSelecao(s) {
+    try {
+        var a = _ler(s);
+        return _comPixels(function () {
+            var doc = app.activeDocument;
+            try { doc.selection.bounds; } catch (e0) { return _json({ ok: false, erro: "Nada selecionado. Selecione a regiao (laco, varinha, intervalo de cores...) e tente de novo." }); }
+            var w = doc.width.as("px"), h = doc.height.as("px");
+            var ch = doc.channels.add(); ch.name = "sep_regiao_tmp";
+            doc.selection.store(ch, SelectionType.REPLACE);
+            doc.activeChannels = doc.componentChannels;
+            var nomeDoc = doc.name;
+            var tmp = app.documents.add(UnitValue(w, "px"), UnitValue(h, "px"), doc.resolution, "sep_regiao", NewDocumentMode.GRAYSCALE, DocumentFill.BLACK);
+            try {
+                // copia o canal temporário do documento da arte para o cinza deste documento
+                var d = new ActionDescriptor(), wd = new ActionDescriptor(), r = new ActionReference();
+                r.putName(charIDToTypeID("Chnl"), "sep_regiao_tmp");
+                r.putName(charIDToTypeID("Dcmn"), nomeDoc);
+                wd.putReference(charIDToTypeID("T   "), r);
+                wd.putEnumerated(charIDToTypeID("Clcl"), charIDToTypeID("Clcn"), charIDToTypeID("Nrml"));
+                d.putObject(charIDToTypeID("With"), charIDToTypeID("Clcl"), wd);
+                executeAction(charIDToTypeID("AppI"), d, DialogModes.NO);
+                var o = new RawSaveOptions(); o.alphaChannels = false; o.spotColors = false;
+                var f = new File(a.arquivo);
+                tmp.saveAs(f, o, true, Extension.LOWERCASE);
+            } finally { tmp.close(SaveOptions.DONOTSAVECHANGES); }
+            app.activeDocument = doc;
+            ch.remove();
+            doc.activeChannels = doc.componentChannels;
+            return _json({ ok: true, raw: f.fsName, w: w, h: h });
+        });
+    } catch (e) { return _erro(e); }
+}
+
 /** Abre a pasta no Explorer. */
 function abrirPasta(s) { try { new Folder(_ler(s).pasta).execute(); return _json({ ok: true }); } catch (e) { return _erro(e); } }

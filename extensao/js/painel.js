@@ -13,7 +13,8 @@ const fmt = n => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const espera = () => new Promise(r => setTimeout(r, 0));
 
-const st = { doc: null, full: null, W: 0, H: 0, dpi: 300, prev: null, pal: null, papeis: [], base: [], nomes: [], plano: null, grupos: null, sep: null, assin: "", raws: null, degradeIdx: new Set() };
+// regioes: cada uma com a sua paleta; a última é sempre o "Resto da arte" (o que nenhuma região cobre)
+const st = { doc: null, full: null, W: 0, H: 0, dpi: 300, prev: null, regioes: [], plano: null, grupos: null, sep: null, assin: "", raws: null, degradeIdx: new Set() };
 
 /* ---------- Photoshop ---------- */
 function host(fn, arg) {
@@ -57,7 +58,7 @@ function carregarImagem(src) {
       const k = Math.min(1, PREV_MAX / Math.max(W, H)), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
       const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
       const g = cv.getContext("2d"); g.drawImage(im, 0, 0, w, h);
-      Object.assign(st, { full, W, H, prev: { w, h, k, cv, px: g.getImageData(0, 0, w, h).data }, raws: null });
+      Object.assign(st, { full, W, H, prev: { w, h, k, cv, px: g.getImageData(0, 0, w, h).data }, raws: null, regioes: [novaRegiao("Resto da arte", null, null)] });
       const cm = v => fmt(v / st.dpi * 2.54);
       status("#stArte", `${st.doc.nome} · ${W} × ${H} px · ${cm(W)} × ${cm(H)} cm a ${Math.round(st.dpi)} dpi`, "ok");
       $("#cvOrig").width = w; $("#cvOrig").height = h; $("#cvOrig").getContext("2d").drawImage(cv, 0, 0);
@@ -75,71 +76,140 @@ function nomeCor(lab) {
   if (L > 60 && C < 38 && hue >= 30 && hue < 80) return "Pele";
   return [[20, "Rosa"], [50, "Vermelho"], [75, "Laranja"], [105, "Amarelo"], [190, "Verde"], [250, "Ciano"], [300, "Azul"], [345, "Roxo"], [361, "Rosa"]].find(x => hue < x[0])[1];
 }
-function calcPaleta() {
+function novaRegiao(nome, raw, mPrev) { return { nome, raw, mPrev, maxCores: 3, pal: null, papeis: [], base: [], nomes: [] }; }
+const ehResto = ri => ri === st.regioes.length - 1;
+// resto = o que nenhuma região cobre: 255 − (máscara mais forte)
+function mascaraResto(masks, N) {
+  if (!masks.length) return null;
+  const m = new Uint8Array(N).fill(255);
+  for (const k of masks) for (let i = 0; i < N; i++) { const v = 255 - k[i]; if (v < m[i]) m[i] = v; }
+  return m;
+}
+function pxDaRegiao(px, m) {
+  if (!m) return px;
+  const out = new Uint8ClampedArray(px);
+  for (let i = 0; i < m.length; i++) out[i * 4 + 3] = px[i * 4 + 3] * m[i] / 255;
+  return out;
+}
+// máscara da resolução cheia → prévia (média por área)
+function reduzirMascara(buf, W, H, w, h) {
+  const acc = new Float32Array(w * h), cnt = new Float32Array(w * h);
+  for (let y = 0; y < H; y++) {
+    const ry = Math.min(h - 1, Math.floor(y * h / H)) * w;
+    for (let x = 0; x < W; x++) { const k = ry + Math.min(w - 1, Math.floor(x * w / W)); acc[k] += buf[y * W + x]; cnt[k]++; }
+  }
+  const m = new Uint8Array(w * h);
+  for (let k = 0; k < m.length; k++) m[k] = Math.round(acc[k] / cnt[k]);
+  return m;
+}
+function adicionarRegiao(nome, raw, mPrev) {
+  st.regioes.splice(st.regioes.length - 1, 0, novaRegiao(nome, raw, mPrev));
+  calcPaleta();
+}
+$("#btnRegiao").onclick = async () => {
+  try {
+    if (!st.prev) throw new Error("Leia a arte primeiro.");
+    const nome = $("#nomeRegiao").value.trim() || "Região " + st.regioes.length;
+    status("#stReg", "Lendo a seleção…");
+    const r = await host("exportarSelecao", { arquivo: path.join(TMP, "regiao" + Date.now() + ".raw") });
+    adicionarRegiao(nome, r.raw, reduzirMascara(fs.readFileSync(r.raw), st.W, st.H, st.prev.w, st.prev.h));
+    $("#nomeRegiao").value = "";
+    status("#stReg", `Região “${nome}” adicionada. Selecione a próxima ou ajuste as cores abaixo.`, "ok");
+  } catch (e) { status("#stReg", e.message, "erro"); }
+};
+
+function calcPaleta(so) {
   if (!st.prev) return;
-  const p = st.prev;
-  st.pal = M.paleta(p.px, p.w, p.h, { maxCores: +$("#maxCores").value, mesclarDE: +$("#mesclar").value });
-  st.papeis = st.pal.cores.map((c, i) => i === st.pal.camiseta ? "camiseta" : st.pal.camiseta < 0 && c.lab[0] < 18 && Math.hypot(c.lab[1], c.lab[2]) < 10 ? "traco" : "imprimir");
-  st.base = st.pal.cores.map(c => c.lab[0] > 25);
-  const conta = {}, seq = {}, nomes = st.pal.cores.map(c => nomeCor(c.lab));
-  nomes.forEach(n => { conta[n] = (conta[n] || 0) + 1; });
-  st.nomes = nomes.map(n => conta[n] > 1 ? n + " " + (seq[n] = (seq[n] || 0) + 1) : n);
-  if (st.pal.camiseta >= 0) $("#camiseta").value = st.pal.cores[st.pal.camiseta].hex;
+  const p = st.prev, N = p.w * p.h;
+  st.regioes[st.regioes.length - 1].mPrev = mascaraResto(st.regioes.slice(0, -1).map(r => r.mPrev), N);
+  st.regioes.forEach((r, ri) => {
+    if (so != null && ri !== so) return;
+    const resto = ehResto(ri);
+    r.pal = M.paleta(pxDaRegiao(p.px, r.mPrev), p.w, p.h, { maxCores: resto ? +$("#maxCores").value : r.maxCores, mesclarDE: +$("#mesclar").value });
+    const cam = resto ? r.pal.camiseta : -1;
+    // quase-preto dentro da arte é traço (contorno/hachura); a cor de fundo é a camiseta
+    r.papeis = r.pal.cores.map((c, i) => i === cam ? "camiseta" : (cam < 0 || !resto) && c.lab[0] < 18 && Math.hypot(c.lab[1], c.lab[2]) < 10 ? "traco" : "imprimir");
+    r.base = r.pal.cores.map(c => c.lab[0] > 25);
+    if (resto) {
+      const conta = {}, seq = {}, nomes = r.pal.cores.map(c => nomeCor(c.lab));
+      nomes.forEach(n => { conta[n] = (conta[n] || 0) + 1; });
+      r.nomes = nomes.map(n => conta[n] > 1 ? n + " " + (seq[n] = (seq[n] || 0) + 1) : n);
+      if (cam >= 0) $("#camiseta").value = r.pal.cores[cam].hex;
+    } else {
+      r.nomes = r.pal.cores.map((_, i) => r.pal.cores.length > 1 ? r.nome + " " + (i + 1) : r.nome);
+    }
+  });
   desenharPaleta(); separar();
 }
 function desenharPaleta() {
-  $("#paleta").innerHTML = st.pal.cores.map((c, i) => `<div class="cor">
-    <span class="sw" style="background:${c.hex}" title="${c.hex}"></span>
-    <div><input type="text" data-nome="${i}" value="${esc(st.nomes[i])}" ${st.papeis[i] !== "imprimir" ? "disabled" : ""}>
-      <div class="row"><small>${fmt(c.cobertura * 100)}%</small><label class="chk"><input type="checkbox" data-base="${i}" ${st.base[i] ? "checked" : ""} ${st.papeis[i] !== "imprimir" ? "disabled" : ""}><small>base</small></label></div></div>
-    <select data-papel="${i}">${[["imprimir", "Imprimir"], ["traco", "Traço"], ["camiseta", "Camiseta"], ["ignorar", "Ignorar"]].map(o => `<option value="${o[0]}" ${st.papeis[i] === o[0] ? "selected" : ""}>${o[1]}</option>`).join("")}</select>
-  </div>`).join("");
+  const multi = st.regioes.length > 1;
+  $("#paleta").innerHTML = st.regioes.map((r, ri) => `
+    ${multi ? `<div class="reg">${ehResto(ri) ? `<b>Resto da arte</b><span class="hint">máx. no controle acima</span>` :
+      `<input type="text" data-rnome="${ri}" value="${esc(r.nome)}"><label class="hint">cores <input type="number" data-rmax="${ri}" value="${r.maxCores}" min="1" max="12" style="width:42px"></label><button class="btn" data-rdel="${ri}" title="Remover região">×</button>`}</div>` : ""}
+    ${r.pal.cores.map((c, i) => `<div class="cor">
+      <span class="sw" style="background:${c.hex}" title="${c.hex}"></span>
+      <div><input type="text" data-r="${ri}" data-nome="${i}" value="${esc(r.nomes[i])}" ${r.papeis[i] !== "imprimir" ? "disabled" : ""}>
+        <div class="row"><small>${fmt(c.cobertura * 100)}%</small><label class="chk"><input type="checkbox" data-r="${ri}" data-base="${i}" ${r.base[i] ? "checked" : ""} ${r.papeis[i] !== "imprimir" ? "disabled" : ""}><small>base</small></label></div></div>
+      <select data-r="${ri}" data-papel="${i}">${[["imprimir", "Imprimir"], ["traco", "Traço"], ["camiseta", "Camiseta"], ["ignorar", "Ignorar"]].map(o => `<option value="${o[0]}" ${r.papeis[i] === o[0] ? "selected" : ""}>${o[1]}</option>`).join("")}</select>
+    </div>`).join("") || `<div class="hint">Sem cores nesta região.</div>`}`).join("");
 }
 $("#paleta").addEventListener("change", e => {
-  const p = e.target.dataset.papel, b = e.target.dataset.base;
-  if (p != null) {
-    st.papeis[+p] = e.target.value;
-    if (e.target.value === "camiseta") { st.papeis = st.papeis.map((v, i) => i === +p ? v : v === "camiseta" ? "imprimir" : v); $("#camiseta").value = st.pal.cores[+p].hex; }
+  const d = e.target.dataset, r = st.regioes[+d.r];
+  if (d.rmax != null) { st.regioes[+d.rmax].maxCores = Math.max(1, +e.target.value || 1); return calcPaleta(+d.rmax); }
+  if (d.rnome != null) { const rg = st.regioes[+d.rnome]; rg.nome = e.target.value.trim() || rg.nome; return calcPaleta(+d.rnome); }
+  if (d.papel != null) {
+    r.papeis[+d.papel] = e.target.value;
+    if (e.target.value === "camiseta") { r.papeis = r.papeis.map((v, i) => i === +d.papel ? v : v === "camiseta" ? "imprimir" : v); $("#camiseta").value = r.pal.cores[+d.papel].hex; }
     desenharPaleta();
   }
-  if (b != null) st.base[+b] = e.target.checked;
+  if (d.base != null) r.base[+d.base] = e.target.checked;
   separar();
 });
-$("#paleta").addEventListener("input", e => { const n = e.target.dataset.nome; if (n != null) { st.nomes[+n] = e.target.value; separar(); } });
+$("#paleta").addEventListener("input", e => { const d = e.target.dataset; if (d.nome != null) { st.regioes[+d.r].nomes[+d.nome] = e.target.value; separar(); } });
+$("#paleta").addEventListener("click", e => {
+  const d = e.target.dataset;
+  if (d.rdel != null) { st.regioes.splice(+d.rdel, 1); st.raws = null; calcPaleta(); }
+});
 
 /* ---------- 3/4. separação e prévia ---------- */
-// opções do pipeline para uma imagem com `dpi` efetivos
+// opções do pipeline para uma imagem com `dpi` efetivos (sem as máscaras: dependem da resolução)
+// flat = as cores de todas as regiões, na ordem em que o pipeline devolve os canais
 function opcoes(dpi) {
-  const mm = v => v / 25.4 * dpi;
-  const idx = st.pal.cores.map((_, i) => i).filter(i => st.papeis[i] !== "camiseta");
+  const mm = v => v / 25.4 * dpi, regioes = [], flat = [];
+  st.regioes.forEach((r, ri) => {
+    const idx = r.pal.cores.map((_, i) => i).filter(i => r.papeis[i] !== "camiseta");
+    // cor em degradê (glow) não leva base: a base é chapada e o degradê viraria cinza no fotolito
+    regioes.push({ cores: idx.map(i => r.pal.cores[i]), papeis: idx.map(i => r.papeis[i]), base: idx.map(i => r.base[i] && !st.degradeIdx.has(ri + ":" + i)) });
+    idx.forEach(i => flat.push({ chave: ri + ":" + i, cor: r.pal.cores[i], papel: r.papeis[i], nome: r.nomes[i] }));
+  });
   return {
-    idx, cores: idx.map(i => st.pal.cores[i]), papeis: idx.map(i => st.papeis[i]),
+    regioes, flat,
     camiseta: M.rgb2lab.apply(null, M.hex2rgb($("#camiseta").value)), bordas: $("#bordas").value,
     tracoCamiseta: $("#tracoOn").checked, alcancePx: mm(+$("#alcance").value), trapPx: mm(+$("#trapMm").value),
-    // cor em degradê (glow) não leva base: a base é chapada e o degradê viraria cinza no fotolito
-    baseOn: $("#baseOn").checked, base: idx.map(i => st.base[i] && !st.degradeIdx.has(i)), chokePx: mm(+$("#choke").value),
+    baseOn: $("#baseOn").checked, chokePx: mm(+$("#choke").value),
   };
 }
+const comMascaras = (o, masks) => Object.assign({}, o, { regioes: o.regioes.map((r, k) => Object.assign({}, r, { mascara: masks[k] })) });
 let timer;
 function separar() { clearTimeout(timer); timer = setTimeout(separarAgora, 120); }
 function separarAgora() {
-  if (!st.pal) return;
-  const p = st.prev, dpiPrev = st.dpi * p.k, camHex = $("#camiseta").value;
+  if (!st.regioes.length || !st.regioes[0].pal) return;
+  const p = st.prev, dpiPrev = st.dpi * p.k, camHex = $("#camiseta").value, masks = st.regioes.map(r => r.mPrev);
   // 1º separa sem base para saber quais cores são degradê; depois monta a base só com as chapadas
-  const sep = M.pipeline(p.px, p.w, p.h, Object.assign(opcoes(dpiPrev), { baseOn: false }));
   st.degradeIdx = new Set();
   const o = opcoes(dpiPrev);
-  sep.canais.forEach((c, k) => { if (o.papeis[k] === "imprimir" && M.tipoTom(c) === "degrade") st.degradeIdx.add(o.idx[k]); });
-  const o2 = opcoes(dpiPrev); Object.assign(o, { base: o2.base });
+  const sep = M.pipeline(p.px, p.w, p.h, Object.assign(comMascaras(o, masks), { baseOn: false }));
+  sep.canais.forEach((c, k) => { if (o.flat[k].papel === "imprimir" && M.tipoTom(c) === "degrade") st.degradeIdx.add(o.flat[k].chave); });
+  const baseFlags = [].concat.apply([], opcoes(dpiPrev).regioes.map(r => r.base));
   if (o.baseOn) {
-    const usar = o.idx.map((_, k) => k).filter(k => o.papeis[k] === "imprimir" && o.base[k]);
+    const usar = o.flat.map((_, k) => k).filter(k => o.flat[k].papel === "imprimir" && baseFlags[k]);
     if (usar.length) sep.base = M.baseBranca(usar.map(k => sep.canais[k]), p.w, p.h, { choke: o.chokePx });
   }
-  const kTraco = o.papeis.indexOf("traco");
-  let plano = sep.canais.map((c, k) => ({ tipo: "cor", k, nome: st.nomes[o.idx[k]], hex: o.cores[k].hex, lab: o.cores[k].lab, tom: M.tipoTom(c), canal: c }))
-    .filter(t => o.papeis[t.k] === "imprimir" && M.cobertura(t.canal) > 0.00005);
+  const kTraco = o.flat.findIndex(f => f.papel === "traco");
+  let plano = sep.canais.map((c, k) => ({ tipo: "cor", k, nome: o.flat[k].nome, hex: o.flat[k].cor.hex, lab: o.flat[k].cor.lab, tom: M.tipoTom(c), canal: c }))
+    .filter(t => o.flat[t.k].papel === "imprimir" && M.cobertura(t.canal) > 0.00005);
   if (sep.traco && M.cobertura(sep.traco) > 0.0005)
-    plano.push({ tipo: "traco", nome: "Traço preto", hex: kTraco >= 0 ? o.cores[kTraco].hex : camHex, lab: kTraco >= 0 ? o.cores[kTraco].lab : o.camiseta, tom: M.tipoTom(sep.traco), canal: sep.traco, traco: true });
+    plano.push({ tipo: "traco", nome: "Traço preto", hex: kTraco >= 0 ? o.flat[kTraco].cor.hex : camHex, lab: kTraco >= 0 ? o.flat[kTraco].cor.lab : o.camiseta, tom: M.tipoTom(sep.traco), canal: sep.traco, traco: true });
   plano = M.ordenar(plano).map(i => plano[i]);
   if (sep.base) plano.unshift({ tipo: "base", nome: "Base branca", hex: "#ffffff", lab: [100, 0, 0], tom: "chapado", canal: sep.base, base: true });
   plano.forEach((t, n) => { t.num = "#" + String(n + 1).padStart(2, "0"); });
@@ -149,7 +219,7 @@ function separarAgora() {
   st.grupos = $("#juntar").checked ? M.agrupar(plano.map(t => t.canal), p.w, p.h, { margem: +$("#folga").value / 2.54 * dpiPrev, fixos }) : plano.map((_, i) => [i]);
   st.grupos.sort((a, b) => a[0] - b[0]);
   st.plano = plano; st.sep = sep;
-  st.assin = JSON.stringify([o.cores.map(c => c.hex), o.papeis, o.base, o.bordas, o.tracoCamiseta, $("#alcance").value, $("#trapMm").value, o.baseOn, $("#choke").value, $("#camiseta").value, lim]);
+  st.assin = JSON.stringify([st.regioes.map(r => r.raw), o.flat.map(f => [f.chave, f.cor.hex, f.papel]), baseFlags, o.bordas, o.tracoCamiseta, $("#alcance").value, $("#trapMm").value, o.baseOn, $("#choke").value, $("#camiseta").value, lim]);
 
   const prova = M.simular(plano.map(t => ({ canal: t.canal, hex: t.hex })), p.w, p.h, camHex);
   const cv = $("#cvProva"); cv.width = p.w; cv.height = p.h; cv.getContext("2d").putImageData(new ImageData(prova, p.w, p.h), 0, 0);
@@ -169,10 +239,14 @@ async function processarCheio() {
   const g = st.full.getContext("2d");
   const arqs = plano.map(t => path.join(TMP, "tela" + t.num.slice(1) + ".raw"));
   const fds = arqs.map(a => fs.openSync(a, "w"));
+  const regs = st.regioes.slice(0, -1), rfds = regs.map(r => fs.openSync(r.raw, "r"));
   try {
     for (let y0 = 0; y0 < H; y0 += FAIXA) {
-      const a = Math.max(0, y0 - s), b = Math.min(H, y0 + FAIXA + s);
-      const r = M.pipeline(g.getImageData(0, a, W, b - a).data, W, b - a, o);
+      const a = Math.max(0, y0 - s), b = Math.min(H, y0 + FAIXA + s), N = (b - a) * W;
+      // máscaras das regiões só nestas linhas; o resto é o que nenhuma cobre
+      const masks = rfds.map(fd => { const m = Buf.alloc(N); fs.readSync(fd, m, 0, N, a * W); return new Uint8Array(m.buffer, m.byteOffset, N); });
+      masks.push(mascaraResto(masks, N));
+      const r = M.pipeline(g.getImageData(0, a, W, b - a).data, W, b - a, comMascaras(o, masks));
       const de = (y0 - a) * W, n = Math.min(FAIXA, H - y0) * W;
       plano.forEach((t, i) => {
         const c = t.tipo === "base" ? r.base : t.tipo === "traco" ? r.traco : r.canais[t.k];
@@ -185,7 +259,7 @@ async function processarCheio() {
       status("#stSaida", `Separando em resolução cheia… ${Math.min(100, Math.round((y0 + FAIXA) / H * 100))}%`);
       await espera();
     }
-  } finally { fds.forEach(fd => fs.closeSync(fd)); }
+  } finally { fds.concat(rfds).forEach(fd => fs.closeSync(fd)); }
   st.raws = { assin: st.assin, arqs };
   return st.raws;
 }
@@ -219,7 +293,8 @@ $("#btnFotos").onclick = () => tarefa("#btnFotos", async () => {
     const degrade = ts.length === 1 && ts[0].tom === "degrade";
     return {
       arquivo: (nums + " " + nomes).replace(/[\\/:*?"<>|]/g, "-") + ".pdf",
-      titulo: nums + "  " + nomes + "   |   " + nomeBase() + "   |   " + (degrade ? "retícula " + $("#lpi").value + " lpi " + $("#ang").value + "°" : "chapado") + " · " + $("#dpiRet").value + " dpi",
+      titulo: nums + "  " + nomes + "   |   " + nomeBase() + "   |   " + (degrade ? "retícula " + $("#lpi").value + " lpi " + $("#ang").value + "°" : "chapado") + " · " + $("#dpiRet").value + " dpi" +
+        (ts.length > 1 ? "   |   " + ts.length + " telas: grave cada cor na sua tela, bloqueando as outras áreas" : ""),
       raw, dpi: +$("#dpiRet").value, reticula: degrade ? { lpi: +$("#lpi").value, angulo: +$("#ang").value } : null,
     };
   });

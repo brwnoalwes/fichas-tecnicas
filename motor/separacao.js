@@ -12,13 +12,13 @@
  *   trap()        cores avançam por baixo do traço preto, para não abrir fresta no registro
  *   tipoTom()     "chapado" ou "degrade" (só o degradê precisa de retícula)
  *   ordenar()     ordem de impressão: claro → escuro, traço preto e degradês por último
- *   agrupar()     telas que podem dividir o mesmo fotolito (regiões que não se tocam)
+ *   agrupar()     cores que podem sair na mesma folha de fotolito (áreas que não se tocam)
  *   reticular()   prévia de retícula AM (ponto redondo); a final é feita pelo Photoshop
  *   simular()     prova de cor: base + cores sobre a cor da camiseta
  *
  * Método de referência (separação do Sukuna, 18 telas): uma tinta própria para cada região e tom
  * (sombras incluídas), canais chapados com borda suave, só o glow em retícula, traço preto por cima,
- * cores distantes dividindo fotolito.
+ * cores distantes dividindo a folha de fotolito (uma tela por cor, sempre).
  */
 // Sintaxe até ES2017: o painel do Photoshop 2020 (CEP 9) roda num Chromium 61 — sem "??" nem "?.".
 // No painel com Node ligado, "module" também existe; por isso publica nos dois lugares.
@@ -280,10 +280,10 @@
     return x1 < 0 ? null : [x0, y0, x1, y1];
   }
   /**
-   * Agrupa telas cujas áreas de tinta não se tocam (com `margem` px de folga) para dividir um
-   * fotolito, como "#01 #02 #04 #05". Compara as áreas reais (não retângulos), numa versão
-   * reduzida da imagem. Cada grupo vira uma tela física; as cores são puxadas em passadas
-   * separadas, bloqueando as outras áreas. @returns índices por grupo
+   * Agrupa telas cujas áreas de tinta não se tocam (com `margem` px de folga) para dividir a mesma
+   * folha de fotolito, como "#01 #02 #04 #05" — só economia de filme: cada cor continua na sua
+   * própria tela (a folha é gravada uma vez por tela, bloqueando as outras áreas). Compara as áreas
+   * reais (não retângulos), numa versão reduzida da imagem. @returns índices por grupo
    */
   function agrupar(canais, w, h, o = {}) {
     const f = Math.max(1, Math.ceil(Math.max(w, h) / 360)), sw = Math.ceil(w / f), sh = Math.ceil(h / f);
@@ -380,12 +380,30 @@
    * @param o.papeis  por cor: "imprimir" | "traco" | "ignorar"
    * @param o.camiseta lab da camiseta; o.bordas; o.tracoCamiseta (bool); o.alcancePx; o.trapPx
    * @param o.baseOn (bool); o.base [bool por cor]; o.chokePx
+   * @param o.regioes opcional: [{mascara: Uint8Array (0–255) | null, cores, papeis, base}]. Cada região
+   *                  separa só os seus pixels (alfa × máscara) com a sua paleta; `null` = sem máscara.
+   *                  Os canais saem na ordem das regiões e, dentro delas, das cores.
    * @returns {{canais: Uint8Array[], traco: Uint8Array|null, base: Uint8Array|null, foraDaPaleta: number}}
    */
   function pipeline(px, w, h, o) {
-    const N = w * h, papel = o.papeis || o.cores.map(() => "imprimir");
-    const sep = separar(px, w, h, { cores: o.cores, camiseta: o.camiseta, bordas: o.bordas });
-    const canais = sep.canais.slice(), idxCor = papel.map((p, k) => p !== "traco" ? k : -1).filter(k => k >= 0);
+    const N = w * h;
+    const regs = o.regioes || [{ mascara: null, cores: o.cores, papeis: o.papeis, base: o.base }];
+    const canais = [], papel = [], baseDe = [];
+    let camiseta = null, fora = 0;
+    for (const r of regs) {
+      let pr = px;
+      if (r.mascara) { pr = new Uint8ClampedArray(px); for (let i = 0; i < N; i++) pr[i * 4 + 3] = px[i * 4 + 3] * r.mascara[i] / 255; }
+      const s = separar(pr, w, h, { cores: r.cores, camiseta: o.camiseta, bordas: o.bordas });
+      s.canais.forEach((c, k) => { canais.push(c); papel.push(r.papeis ? r.papeis[k] : "imprimir"); baseDe.push(!r.base || r.base[k]); });
+      if (s.camiseta) {
+        if (!camiseta) camiseta = s.camiseta;
+        else for (let i = 0; i < N; i++) { const v = camiseta[i] + s.camiseta[i]; camiseta[i] = v > 255 ? 255 : v; }
+      }
+      fora += s.foraDaPaleta;
+    }
+    const sep = { canais, camiseta, foraDaPaleta: fora };
+    o = Object.assign({}, o, { base: baseDe });
+    const idxCor = papel.map((p, k) => p !== "traco" ? k : -1).filter(k => k >= 0);
     let traco = null;
     canais.forEach((c, k) => {
       if (papel[k] !== "traco") return;
