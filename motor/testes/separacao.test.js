@@ -68,6 +68,20 @@ test("separar: área de cada canal bate com a geometria e o preto vaza", () => {
   assert.ok(canais[iv].some(v => v > 30 && v < 225));
 });
 
+test("bordas automáticas: corte seco entre tintas, meia-tinta só contra a camiseta", () => {
+  // degradê vermelho → amarelo (entre tintas) e vermelho → preto (contra a camiseta)
+  const w = 200, h = 2, px = new Uint8ClampedArray(w * h * 4);
+  for (let x = 0; x < w; x++) {
+    const t = x / (w - 1), de = y => y === 0 ? AMARELO : PRETO;
+    for (let y = 0; y < h; y++) { const c = de(y), i = (y * w + x) * 4; for (let k = 0; k < 3; k++) px[i + k] = VERMELHO[k] * (1 - t) + c[k] * t; px[i + 3] = 255; }
+  }
+  const cores = [{ lab: M.rgb2lab(...VERMELHO) }, { lab: M.rgb2lab(...AMARELO) }];
+  const { canais } = M.separar(px, w, h, { cores, camiseta: M.rgb2lab(...PRETO) });
+  const linha = (c, y) => [...c.subarray(y * w, y * w + w)];
+  assert.ok(linha(canais[0], 0).every(v => v === 0 || v === 255), "vermelho × amarelo: sem meio-tom");
+  assert.ok(linha(canais[0], 1).some(v => v > 40 && v < 215), "vermelho × camiseta: com meio-tom (glow)");
+});
+
 test("bordas duras: só 0 ou 255", () => {
   const { px, w, h } = arte();
   const { cores, camiseta } = M.paleta(px, w, h);
@@ -99,6 +113,60 @@ test("retícula: a fração de pontos acompanha o tom", () => {
     assert.ok(r.every(v => v === 0 || v === 255));
     assert.ok(Math.abs(M.cobertura(r) - tom) < 0.06, `tom ${tom}: ${M.cobertura(r).toFixed(3)}`);
   }
+});
+
+// arte com traço: círculo vermelho com contorno preto de 4 px, sobre fundo preto + gota amarela longe
+function arteComTraco(w = 300, h = 200) {
+  const px = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const d = Math.hypot(x - 80, y - 100), i = (y * w + x) * 4;
+    let c = PRETO;
+    if (d < 50) c = VERMELHO; else if (d < 54) c = PRETO; // contorno (igual ao fundo!)
+    if (Math.hypot(x - 250, y - 60) < 15) c = AMARELO;
+    // risco preto atravessando o círculo (hachura dentro da arte)
+    if (d < 50 && Math.abs(x - 80) < 2) c = PRETO;
+    px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255;
+  }
+  return { px, w, h };
+}
+
+test("traço preto: preto dentro da arte imprime, fundo continua vazando", () => {
+  const { px, w, h } = arteComTraco();
+  const cores = [{ lab: M.rgb2lab(...VERMELHO) }, { lab: M.rgb2lab(...AMARELO) }];
+  const sep = M.separar(px, w, h, { cores, camiseta: M.rgb2lab(...PRETO), bordas: "duras" });
+  const traco = M.tracoPreto(sep.camiseta, sep.canais, w, h, { alcance: 6 });
+  assert.equal(traco[100 * w + 80], 255, "risco dentro do círculo é traço");
+  assert.equal(traco[100 * w + 28], 255, "contorno (x=28) é traço");
+  assert.equal(traco[10 * w + 10], 0, "canto da camiseta vaza");
+  assert.equal(traco[100 * w + 150], 0, "fundo longe da arte vaza");
+});
+
+test("trap: a cor avança por baixo do traço, mas não sobre o fundo", () => {
+  const { px, w, h } = arteComTraco();
+  const cores = [{ lab: M.rgb2lab(...VERMELHO) }, { lab: M.rgb2lab(...AMARELO) }];
+  const sep = M.separar(px, w, h, { cores, camiseta: M.rgb2lab(...PRETO), bordas: "duras" });
+  const traco = M.tracoPreto(sep.camiseta, sep.canais, w, h, { alcance: 6 });
+  const [verm] = M.trap(sep.canais, traco, w, h, 2);
+  assert.equal(sep.canais[0][100 * w + 80], 0, "sem trap, o risco abre buraco no vermelho");
+  assert.equal(verm[100 * w + 80], 255, "com trap, o vermelho passa por baixo do risco");
+  assert.equal(verm[100 * w + 28], 0, "contorno de 4 px: trap de 2 px não chega ao meio dele (x=28)");
+  assert.equal(verm[100 * w + 150], 0, "não invade o fundo");
+});
+
+test("tipoTom, ordenar e agrupar", () => {
+  const w = 100, h = 100, N = w * h;
+  const chapado = new Uint8Array(N), degrade = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { const x = i % w; if (x < 30) chapado[i] = 255; degrade[i] = Math.round(x / w * 255); }
+  assert.equal(M.tipoTom(chapado), "chapado");
+  assert.equal(M.tipoTom(degrade), "degrade");
+  const ord = M.ordenar([{ lab: [30, 0, 0], tom: "chapado" }, { lab: [90, 0, 0], tom: "chapado" }, { lab: [10, 0, 0], tom: "chapado", traco: true }, { lab: [60, 0, 0], tom: "degrade" }]);
+  assert.deepEqual(ord, [1, 0, 3, 2], "claro → escuro → degradê → traço");
+  // duas manchas separadas dividem tela; a faixa que passa por cima de uma delas não
+  const a = new Uint8Array(N), b = new Uint8Array(N), c = new Uint8Array(N);
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) { a[(y + 20) * w + x + 20] = 255; b[(y + 70) * w + x + 70] = 255; }
+  for (let y = 22; y < 28; y++) for (let x = 0; x < w; x++) c[y * w + x] = 255;
+  const g = M.agrupar([a, b, c], w, h, { margem: 5 });
+  assert.deepEqual(g.map(x => x.join()).sort(), ["0,1", "2"]);
 });
 
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {

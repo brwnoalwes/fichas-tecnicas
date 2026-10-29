@@ -8,8 +8,17 @@
  *   paleta()      detecta as cores sólidas da arte (k-means em Lab + limpeza)
  *   separar()     um canal por cor; bordas suavizadas viram meia-tinta entre as duas cores vizinhas
  *   baseBranca()  união das cores que levam base, com retração (choke) em px
+ *   tracoPreto()  preto da arte impresso por cima (traço/"key"), separado do fundo que vaza
+ *   trap()        cores avançam por baixo do traço preto, para não abrir fresta no registro
+ *   tipoTom()     "chapado" ou "degrade" (só o degradê precisa de retícula)
+ *   ordenar()     ordem de impressão: claro → escuro, traço preto e degradês por último
+ *   agrupar()     telas que podem dividir o mesmo fotolito (regiões que não se tocam)
  *   reticular()   prévia de retícula AM (ponto redondo); a final é feita pelo Photoshop
  *   simular()     prova de cor: base + cores sobre a cor da camiseta
+ *
+ * Método de referência (separação do Sukuna, 18 telas): uma tinta própria para cada região e tom
+ * (sombras incluídas), canais chapados com borda suave, só o glow em retícula, traço preto por cima,
+ * cores distantes dividindo fotolito.
  */
 (function (raiz, fabrica) {
   if (typeof module === "object" && module.exports) module.exports = fabrica();
@@ -149,15 +158,20 @@
   /**
    * @param o.cores    [{lab}] cores que serão impressas
    * @param o.camiseta lab da camiseta (ou null): pixels dessa cor não imprimem (vazado)
-   * @param o.bordas   "suaves" (padrão: borda vira meia-tinta entre as duas cores) | "duras"
+   * @param o.bordas   "auto" (padrão): corte seco entre duas tintas, meia-tinta só onde a cor esmaece
+   *                   para a camiseta (glow, fumaça) — é o que mantém as telas chapadas numa ilustração;
+   *                   "suaves": meia-tinta entre quaisquer duas cores vizinhas; "duras": sem meia-tinta
    * @param o.tolMistura distância máxima (ΔE) ao segmento entre duas cores para tratar como borda
-   * @returns {{canais: Uint8Array[], foraDaPaleta: number}} foraDaPaleta = fração de pixels longe de todas as cores
+   * @returns {{canais: Uint8Array[], camiseta: Uint8Array|null, foraDaPaleta: number}}
+   *          camiseta = quanto de cada pixel é a cor da camiseta (base para o traço preto)
+   *          foraDaPaleta = fração de pixels longe de todas as cores
    */
   function separar(px, w, h, o) {
     const N = w * h, cores = o.cores.map(c => c.lab), K = cores.length;
     const ref = o.camiseta ? [...cores, o.camiseta] : cores; // último = camiseta (não imprime)
     const R = ref.length, tolMix = o.tolMistura ?? 14, tolFora = o.tolFora ?? 25, duras = o.bordas === "duras";
-    const canais = cores.map(() => new Uint8Array(N));
+    const auto = !o.bordas || o.bordas === "auto", iCam = o.camiseta ? K : -1;
+    const canais = ref.map(() => new Uint8Array(N));
     const cache = new Map();
     let fora = 0;
     const d = new Float64Array(R);
@@ -176,16 +190,100 @@
           const [t, resid] = projetar(p, ref[i2], ref[i1]); // t = quanto da cor i1
           if (resid < tolMix && resid < erro) { t1 = t; erro = resid; }
         }
-        if (duras) t1 = t1 >= 0.5 ? 1 : 0;
+        if (duras || (auto && i1 !== iCam && i2 !== iCam)) t1 = t1 >= 0.5 ? 1 : 0;
         res = [i1, i2, t1, erro > tolFora ? 1 : 0];
         cache.set(chave, res);
       }
       const [i1, i2, t1, longe] = res;
       fora += longe;
-      if (i1 < K) canais[i1][i] = Math.round(255 * t1 * al / 255);
-      if (i2 >= 0 && i2 < K && t1 < 1) canais[i2][i] = Math.round(255 * (1 - t1) * al / 255);
+      canais[i1][i] = Math.round(255 * t1 * al / 255);
+      if (i2 >= 0 && t1 < 1) canais[i2][i] = Math.round(255 * (1 - t1) * al / 255);
     }
-    return { canais, foraDaPaleta: fora / N };
+    return { canais: canais.slice(0, K), camiseta: o.camiseta ? canais[K] : null, foraDaPaleta: fora / N };
+  }
+
+  /* ---------- traço preto, trap, tom, ordem e agrupamento ---------- */
+  // dilatação em tons de cinza (máximo numa janela quadrada 2r+1), separável
+  function dilatar(c, w, h, r) {
+    if (r <= 0) return c.slice();
+    const inv = new Uint8Array(c.length);
+    for (let i = 0; i < c.length; i++) inv[i] = 255 - c[i];
+    const e = erodir(inv, w, h, r);
+    for (let i = 0; i < e.length; i++) e[i] = 255 - e[i];
+    return e;
+  }
+  const uniao = (canais, N) => { const u = new Uint8Array(N); for (const c of canais) for (let i = 0; i < N; i++) if (c[i] > u[i]) u[i] = c[i]; return u; };
+  /**
+   * Preto da arte impresso por cima: é a cor da camiseta que fica DENTRO da arte (perto de outras
+   * cores, até `alcance` px). O resto da cor da camiseta é fundo e continua vazando.
+   */
+  function tracoPreto(camiseta, canais, w, h, o = {}) {
+    const N = w * h, perto = dilatar(uniao(canais, N), w, h, Math.round(o.alcance ?? 6)), out = new Uint8Array(N);
+    for (let i = 0; i < N; i++) out[i] = Math.min(camiseta[i], perto[i]);
+    return out;
+  }
+  /** Cada cor avança `r` px por baixo do traço preto (só onde há traço), escondendo frestas de registro. */
+  function trap(canais, traco, w, h, r) {
+    r = Math.round(r);
+    if (!(r > 0)) return canais;
+    // só os pixels debaixo do traço podem mudar: olha a vizinhança apenas deles
+    const sob = [];
+    for (let i = 0; i < traco.length; i++) if (traco[i]) sob.push(i);
+    return canais.map(c => {
+      const out = c.slice();
+      for (const i of sob) {
+        const t = traco[i]; if (c[i] >= t) continue;
+        const x = i % w, y = (i - x) / w;
+        let m = c[i];
+        for (let yy = Math.max(0, y - r), ye = Math.min(h - 1, y + r); yy <= ye && m < t; yy++)
+          for (let xx = Math.max(0, x - r), xe = Math.min(w - 1, x + r), o = yy * w; xx <= xe; xx++) if (c[o + xx] > m) m = c[o + xx];
+        out[i] = Math.min(m, t);
+      }
+      return out;
+    });
+  }
+  /** "degrade" quando mais de 20% dos pixels com tinta são meio-tom (precisa de retícula). */
+  function tipoTom(c) {
+    let tinta = 0, meio = 0;
+    for (let i = 0; i < c.length; i++) { const v = c[i]; if (v > 12) { tinta++; if (v > 40 && v < 215) meio++; } }
+    return tinta && meio / tinta > 0.2 ? "degrade" : "chapado";
+  }
+  /** Ordem de impressão: chapados do mais claro ao mais escuro, depois degradês, traço preto por último. */
+  function ordenar(telas) {
+    const peso = t => (t.traco ? 2e3 : 0) + (t.tom === "degrade" ? 1e3 : 0) + (100 - t.lab[0]);
+    return telas.map((t, i) => ({ t, i })).sort((a, b) => peso(a.t) - peso(b.t)).map(x => x.i);
+  }
+  /** Caixa (x0,y0,x1,y1) dos pixels com tinta, ou null. */
+  function caixa(c, w, h, lim = 25) {
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0, r = y * w; x < w; x++) if (c[r + x] > lim) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    return x1 < 0 ? null : [x0, y0, x1, y1];
+  }
+  /**
+   * Agrupa telas cujas áreas de tinta não se tocam (com `margem` px de folga) para dividir um
+   * fotolito, como "#01 #02 #04 #05". Compara as áreas reais (não retângulos), numa versão
+   * reduzida da imagem. Cada grupo vira uma tela física; as cores são puxadas em passadas
+   * separadas, bloqueando as outras áreas. @returns índices por grupo
+   */
+  function agrupar(canais, w, h, o = {}) {
+    const f = Math.max(1, Math.ceil(Math.max(w, h) / 360)), sw = Math.ceil(w / f), sh = Math.ceil(h / f);
+    const m = Math.max(1, Math.round((o.margem ?? 20) / f)), fixos = o.fixos || [];
+    const mask = canais.map(c => {
+      const s = new Uint8Array(sw * sh);
+      for (let y = 0; y < h; y++) for (let x = 0, r = y * w, rs = Math.floor(y / f) * sw; x < w; x++) if (c[r + x] > 25) s[rs + Math.floor(x / f)] = 255;
+      return s;
+    });
+    const area = mask.map(s => { let n = 0; for (const v of s) if (v) n++; return n; });
+    const larga = mask.map((s, i) => area[i] && !fixos.includes(i) ? dilatar(s, sw, sh, m) : null);
+    const toca = (i, j) => { const a = larga[i], b = mask[j]; for (let k = 0; k < a.length; k++) if (a[k] && b[k]) return true; return false; };
+    const ordem = canais.map((_, i) => i).filter(i => area[i] && !fixos.includes(i)).sort((a, b) => area[a] - area[b]);
+    const grupos = [];
+    for (const i of ordem) {
+      const g = grupos.find(g => g.length < (o.maxPorTela || 4) && g.every(j => !toca(i, j) && !toca(j, i)));
+      g ? g.push(i) : grupos.push([i]);
+    }
+    for (const i of fixos) if (area[i]) grupos.push([i]);
+    return grupos.map(g => g.sort((a, b) => a - b));
   }
 
   /* ---------- base branca ---------- */
@@ -256,5 +354,5 @@
 
   const cobertura = c => { let s = 0; for (let i = 0; i < c.length; i++) s += c[i]; return s / 255 / c.length; };
 
-  return { paleta, separar, baseBranca, erodir, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
+  return { paleta, separar, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
 });
