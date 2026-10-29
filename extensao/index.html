@@ -39,6 +39,8 @@ label.chk{display:flex;gap:6px;align-items:center}
 .cor small{color:var(--muted)}
 .prev{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .prev canvas{width:100%;display:block;border-radius:3px;background:#222}
+.prev{cursor:zoom-in}
+.prev.grande{grid-template-columns:1fr;cursor:zoom-out}
 .telas{display:grid;gap:2px}
 .tela{display:flex;gap:6px;align-items:center;padding:2px 0}
 .tela i{width:12px;height:12px;border-radius:2px;border:1px solid #0008;flex:none}
@@ -77,7 +79,8 @@ label.chk{display:flex;gap:6px;align-items:center}
   </div></div>
 
   <div class="sec"><h3><span class="n">4</span>Prévia</h3><div class="bd">
-    <div class="prev"><canvas id="cvOrig" title="Arte"></canvas><canvas id="cvProva" title="Prova de cor"></canvas></div>
+    <div class="prev" id="prev" title="Clique para ampliar"><canvas id="cvOrig" title="Arte"></canvas><canvas id="cvProva" title="Prova de cor"></canvas></div>
+    <button class="btn" id="btnProva" disabled>Ver prova no tamanho da arte (abre no Photoshop)</button>
     <div class="status" id="stPrev">—</div>
     <div class="telas" id="telas"></div>
   </div></div>

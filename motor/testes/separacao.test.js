@@ -217,6 +217,18 @@ test("regiões: o mesmo tom em duas regiões vira duas tintas, sem sobra nem sob
   for (let i = 0; i < N; i++) assert.equal(r.canais[0][i] + r.canais[1][i], unica.canais[0][i]);
 });
 
+test("regiões: seleção suave não vira meia-tinta e região sobreposta não imprime duas vezes", () => {
+  const w = 60, h = 1, N = w, px = new Uint8ClampedArray(N * 4);
+  for (let i = 0; i < N; i++) { px[i * 4] = VERMELHO[0]; px[i * 4 + 1] = VERMELHO[1]; px[i * 4 + 2] = VERMELHO[2]; px[i * 4 + 3] = 255; }
+  // seleção em degradê de 0 a 255 (Intervalo de cores / difusão) e outra região cobrindo tudo
+  const suave = new Uint8Array(N).map((_, i) => Math.round(i / (N - 1) * 255)), tudo = new Uint8Array(N).fill(255);
+  const verm = { lab: M.rgb2lab(...VERMELHO) };
+  const r = M.pipeline(px, w, h, { camiseta: M.rgb2lab(...PRETO), regioes: [{ mascara: suave, cores: [verm] }, { mascara: tudo, cores: [verm] }, { mascara: null, cores: [verm] }] });
+  assert.ok(r.canais.every(c => c.every(v => v === 0 || v === 255)), "só 0 ou 255");
+  for (let i = 0; i < N; i++) assert.equal(r.canais[0][i] + r.canais[1][i] + r.canais[2][i], 255, "cada pixel em exatamente uma região");
+  assert.equal(r.canais[2].some(v => v), false, "nada sobra para o resto");
+});
+
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {
   const w = 2, h = 1, cheio = new Uint8Array([255, 0]);
   const out = M.simular([{ canal: cheio, hex: "#ffffff" }, { canal: cheio, hex: "#d21e28" }], w, h, "#111111");

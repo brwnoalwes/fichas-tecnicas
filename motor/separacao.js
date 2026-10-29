@@ -381,7 +381,8 @@
    * @param o.camiseta lab da camiseta; o.bordas; o.tracoCamiseta (bool); o.alcancePx; o.trapPx
    * @param o.baseOn (bool); o.base [bool por cor]; o.chokePx
    * @param o.regioes opcional: [{mascara: Uint8Array (0–255) | null, cores, papeis, base}]. Cada região
-   *                  separa só os seus pixels (alfa × máscara) com a sua paleta; `null` = sem máscara.
+   *                  separa só os seus pixels (máscara ≥ 50% e ainda não tomados por uma região anterior)
+   *                  com a sua paleta; `null` = tudo o que sobrou.
    *                  Os canais saem na ordem das regiões e, dentro delas, das cores.
    * @returns {{canais: Uint8Array[], traco: Uint8Array|null, base: Uint8Array|null, foraDaPaleta: number}}
    */
@@ -390,9 +391,17 @@
     const regs = o.regioes || [{ mascara: null, cores: o.cores, papeis: o.papeis, base: o.base }];
     const canais = [], papel = [], baseDe = [];
     let camiseta = null, fora = 0;
+    // cada pixel pertence a UMA região (máscara ≥ 50%, a primeira que pegar): seleção suave não pode
+    // virar meia-tinta na tela — a pele chapada sairia reticulada
+    const tomado = o.regioes ? new Uint8Array(N) : null;
     for (const r of regs) {
       let pr = px;
-      if (r.mascara) { pr = new Uint8ClampedArray(px); for (let i = 0; i < N; i++) pr[i * 4 + 3] = px[i * 4 + 3] * r.mascara[i] / 255; }
+      if (tomado) {
+        pr = new Uint8ClampedArray(px);
+        for (let i = 0; i < N; i++) {
+          if (!tomado[i] && (!r.mascara || r.mascara[i] >= 128)) tomado[i] = 1; else pr[i * 4 + 3] = 0;
+        }
+      }
       const s = separar(pr, w, h, { cores: r.cores, camiseta: o.camiseta, bordas: o.bordas });
       s.canais.forEach((c, k) => { canais.push(c); papel.push(r.papeis ? r.papeis[k] : "imprimir"); baseDe.push(!r.base || r.base[k]); });
       if (s.camiseta) {

@@ -227,7 +227,7 @@ function separarAgora() {
   $("#telas").innerHTML = plano.map(t => `<div class="tela"><i style="background:${t.hex}"></i><b>${t.num}</b> ${esc(t.nome)}
     ${t.base ? '<span class="tag base">base</span>' : t.traco ? '<span class="tag traco">traço</span>' : `<span class="tag ${t.tom}">${t.tom === "degrade" ? "degradê" : "chapado"}</span>`}
     <span class="hint">${fmt(M.cobertura(t.canal) * 100)}%</span></div>`).join("");
-  ["#btnCanais", "#btnFotos", "#btnFicha"].forEach(id => { $(id).disabled = !plano.length || (id !== "#btnFicha" && !CEP); });
+  ["#btnCanais", "#btnFotos", "#btnFicha", "#btnProva"].forEach(id => { $(id).disabled = !plano.length || (id !== "#btnFicha" && !CEP); });
   salvarPreferencias();
 }
 
@@ -326,6 +326,54 @@ $("#btnFicha").onclick = () => tarefa("#btnFicha", async () => {
     status("#stSaida", "Arquivo .ficha.json baixado.", "ok");
   }
 });
+
+// PNG RGB 8 bits a partir das linhas já com o byte de filtro
+let TAB_CRC = null;
+function png(linhas, w, h) {
+  const zlib = nreq("zlib");
+  if (!TAB_CRC) { TAB_CRC = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; TAB_CRC[n] = c >>> 0; } }
+  const crc = b => { let x = 0xffffffff; for (let i = 0; i < b.length; i++) x = TAB_CRC[(x ^ b[i]) & 255] ^ (x >>> 8); return (x ^ 0xffffffff) >>> 0; };
+  const bloco = (tipo, dados) => {
+    const l = Buf.alloc(4); l.writeUInt32BE(dados.length, 0);
+    const td = Buf.concat([Buf.from(tipo), dados]), c = Buf.alloc(4); c.writeUInt32BE(crc(td), 0);
+    return Buf.concat([l, td, c]);
+  };
+  const ih = Buf.alloc(13); ih.writeUInt32BE(w, 0); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 2;
+  return Buf.concat([Buf.from([137, 80, 78, 71, 13, 10, 26, 10]), bloco("IHDR", ih), bloco("IDAT", zlib.deflateSync(linhas, { level: 3 })), bloco("IEND", Buf.alloc(0))]);
+}
+
+// prova de cor em resolução cheia, a partir das telas finais (mesma ordem de impressão), aberta como aba
+$("#btnProva").onclick = () => tarefa("#btnProva", async () => {
+  const raws = await processarCheio();
+  const W = st.W, H = st.H, cam = M.hex2rgb($("#camiseta").value), cores = st.plano.map(t => M.hex2rgb(t.hex));
+  const arq = path.join(TMP, "Prova de cor - " + nomeBase().replace(/[\\/:*?"<>|]/g, "-") + ".png");
+  const fds = raws.arqs.map(a => fs.openSync(a, "r")), partes = [];
+  try {
+    for (let y0 = 0; y0 < H; y0 += FAIXA) {
+      const nl = Math.min(FAIXA, H - y0), n = nl * W;
+      const linhas = fds.map(fd => { const b = Buf.alloc(n); fs.readSync(fd, b, 0, n, y0 * W); return b; });
+      const rgb = Buf.alloc(nl * (W * 3 + 1)); // cada linha do PNG começa com o byte de filtro (0)
+      for (let q = 0; q < n; q++) {
+        let r = cam[0], g = cam[1], b = cam[2];
+        for (let k = 0; k < linhas.length; k++) {
+          const a = (255 - linhas[k][q]) / 255; if (!a) continue;
+          const c = cores[k]; r += (c[0] - r) * a; g += (c[1] - g) * a; b += (c[2] - b) * a;
+        }
+        const y = Math.floor(q / W), o = y * (W * 3 + 1) + 1 + (q - y * W) * 3;
+        rgb[o] = r; rgb[o + 1] = g; rgb[o + 2] = b;
+      }
+      partes.push(rgb);
+      barra((y0 + FAIXA) / H);
+      status("#stSaida", `Montando a prova em tamanho real… ${Math.min(100, Math.round((y0 + FAIXA) / H * 100))}%`);
+      await espera();
+    }
+  } finally { fds.forEach(fd => fs.closeSync(fd)); }
+  fs.writeFileSync(arq, png(Buf.concat(partes), W, H));
+  await host("abrirProva", { arquivo: arq, dpi: st.dpi });
+  status("#stSaida", "Prova aberta numa aba nova, no mesmo tamanho da arte. Use Janela > Organizar para ver lado a lado.", "ok");
+});
+// clique na prévia: amplia na largura do painel (e volta)
+$("#prev").addEventListener("click", () => $("#prev").classList.toggle("grande"));
 
 const limiteLimpeza = () => +$("#limpeza").value / 100;
 

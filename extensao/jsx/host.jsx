@@ -222,5 +222,17 @@ function exportarSelecao(s) {
     } catch (e) { return _erro(e); }
 }
 
+/** Abre a prova de cor (PNG) como documento novo, no tamanho e dpi da arte. */
+function abrirProva(s) {
+    try {
+        var a = _ler(s);
+        return _comPixels(function () {
+            var d = app.open(new File(a.arquivo));
+            d.resizeImage(undefined, undefined, a.dpi, ResampleMethod.NONE);
+            return _json({ ok: true, nome: d.name });
+        });
+    } catch (e) { return _erro(e); }
+}
+
 /** Abre a pasta no Explorer. */
 function abrirPasta(s) { try { new Folder(_ler(s).pasta).execute(); return _json({ ok: true }); } catch (e) { return _erro(e); } }
