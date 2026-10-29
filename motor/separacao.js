@@ -356,6 +356,71 @@
     return out;
   }
 
+  /* ---------- fotolito misto: chapado + retícula na mesma tela ---------- */
+  /**
+   * Zonas de degradê de uma tela: meio-tom (10–90%) numa área com pelo menos 2·raio+1 px de largura
+   * (abertura morfológica). A borda suavizada de um traço ou de uma forma chapada é estreita e não
+   * entra — ela é chapada no limiar; glow, esfumado e passagem entre duas tintas entram e são reticulados.
+   */
+  function zonaDegrade(c, w, h, raio, modo) {
+    // escolha da tela feita por quem separa: "chapado" nunca reticula, "reticula" reticula todo meio-tom
+    if (modo === "chapado") return new Uint8Array(c.length);
+    if (modo === "reticula") return new Uint8Array(c.length).fill(255);
+    const m = new Uint8Array(c.length);
+    for (let i = 0; i < c.length; i++) m[i] = c[i] >= 26 && c[i] <= 229 ? 255 : 0;
+    const r = Math.max(1, Math.round(raio));
+    return dilatar(erodir(m, w, h, r), w, h, r);
+  }
+  /**
+   * Como o fotolito fica visto de longe (prévia): fora das zonas de degradê, limiar 50%; dentro, o tom,
+   * com ponto mínimo/máximo (abaixo some, acima fecha).
+   */
+  function simularFilme(c, w, h, o) {
+    const zona = zonaDegrade(c, w, h, o.raio, o.modo), out = new Uint8Array(c.length);
+    const pmin = def(o.pontoMin, 0.08) * 255, pmax = def(o.pontoMax, 0.92) * 255;
+    for (let i = 0; i < c.length; i++) {
+      const v = c[i];
+      out[i] = !zona[i] ? (v >= 128 ? 255 : 0) : v <= pmin ? 0 : v >= pmax ? 255 : v;
+    }
+    return out;
+  }
+  const fracaoDegrade = (c, w, h, raio, modo) => { const z = zonaDegrade(c, w, h, raio, modo); let n = 0, t = 0; for (let i = 0; i < c.length; i++) if (c[i] > 25) { t++; if (z[i]) n++; } return t ? n / t : 0; };
+  const COS = new Float64Array(4097).map((_, i) => Math.cos(2 * Math.PI * i / 4096));
+  const cos2pi = u => COS[Math.round((u - Math.floor(u)) * 4096)];
+  /**
+   * Fotolito 1 bit de uma faixa da tela, já na resolução de saída (escala inteira `s`, ex.: 3 = 300→900 dpi).
+   * Amplia por interpolação (a borda fica nítida e bem posicionada), chapa fora das zonas de degradê
+   * (limiar 50%) e reticula dentro delas (ponto redondo, lpi/ângulo, ponto mínimo/máximo).
+   * A retícula usa coordenadas globais, então faixas vizinhas se encaixam sem emenda.
+   * @param c   faixa da tela (tinta 0–255), w × h
+   * @param o   {s, yIni, yFim (linhas da faixa a gerar), yGlobal (linha da faixa no documento),
+   *             raio, pontoMin, pontoMax, lpi, angulo, dpiSaida, modo: "auto" | "chapado" | "reticula"}
+   * @returns Uint8Array (w·s) × ((yFim−yIni)·s), 255 = tinta
+   */
+  function filme(c, w, h, o) {
+    const s = o.s, zona = zonaDegrade(c, w, h, o.raio, o.modo), W = w * s, H = (o.yFim - o.yIni) * s, out = new Uint8Array(W * H);
+    const cel = o.dpiSaida / o.lpi, ang = def(o.angulo, 22.5) * Math.PI / 180, cs = Math.cos(ang) / cel, sn = Math.sin(ang) / cel;
+    const pmin = def(o.pontoMin, 0.08) * 255, pmax = def(o.pontoMax, 0.92) * 255;
+    for (let Y = 0; Y < H; Y++) {
+      const yg = (o.yGlobal + o.yIni) * s + Y;
+      let sy = (o.yIni * s + Y + 0.5) / s - 0.5; if (sy < 0) sy = 0; if (sy > h - 1) sy = h - 1;
+      const y0 = Math.floor(sy), y1 = Math.min(h - 1, y0 + 1), fy = sy - y0, r0 = y0 * w, r1 = y1 * w, ro = Y * W;
+      for (let X = 0; X < W; X++) {
+        let sx = (X + 0.5) / s - 0.5; if (sx < 0) sx = 0; if (sx > w - 1) sx = w - 1;
+        const x0 = Math.floor(sx), x1 = x0 + 1 < w ? x0 + 1 : x0, fx = sx - x0;
+        const a = c[r0 + x0], b = c[r0 + x1], d = c[r1 + x0], e = c[r1 + x1];
+        if (!(a | b | d | e)) continue;
+        const v = (a * (1 - fx) + b * fx) * (1 - fy) + (d * (1 - fx) + e * fx) * fy;
+        if (!zona[(fy < 0.5 ? r0 : r1) + (fx < 0.5 ? x0 : x1)]) { if (v >= 127.5) out[ro + X] = 255; continue; }
+        if (v <= pmin) continue;
+        if (v >= pmax) { out[ro + X] = 255; continue; }
+        const u = X * cs + yg * sn, t = -X * sn + yg * cs;
+        if ((cos2pi(u) + cos2pi(t)) / 4 + 0.5 > 1 - v / 255) out[ro + X] = 255;
+      }
+    }
+    return out;
+  }
+
   /* ---------- prova de cor ---------- */
   /**
    * @param camadas [{canal, hex}] na ordem de impressão (base primeiro)
@@ -436,5 +501,5 @@
 
   const cobertura = c => { let s = 0; for (let i = 0; i < c.length; i++) s += c[i]; return s / 255 / c.length; };
 
-  return { paleta, separar, pipeline, sobra, limpar, limiar, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
+  return { paleta, separar, pipeline, sobra, limpar, limiar, zonaDegrade, simularFilme, fracaoDegrade, filme, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
 });

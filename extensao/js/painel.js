@@ -14,7 +14,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 const espera = () => new Promise(r => setTimeout(r, 0));
 
 // regioes: cada uma com a sua paleta; a última é sempre o "Resto da arte" (o que nenhuma região cobre)
-const st = { doc: null, full: null, W: 0, H: 0, dpi: 300, prev: null, regioes: [], plano: null, grupos: null, sep: null, assin: "", raws: null, degradeIdx: new Set() };
+const st = { doc: null, full: null, W: 0, H: 0, dpi: 300, prev: null, regioes: [], plano: null, grupos: null, sep: null, assin: "", raws: null, modos: {} };
 
 /* ---------- Photoshop ---------- */
 function host(fn, arg) {
@@ -58,7 +58,7 @@ function carregarImagem(src) {
       const k = Math.min(1, PREV_MAX / Math.max(W, H)), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
       const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
       const g = cv.getContext("2d"); g.drawImage(im, 0, 0, w, h);
-      Object.assign(st, { full, W, H, prev: { w, h, k, cv, px: g.getImageData(0, 0, w, h).data }, raws: null, regioes: [novaRegiao("Resto da arte", null, null)] });
+      Object.assign(st, { full, W, H, prev: { w, h, k, cv, px: g.getImageData(0, 0, w, h).data }, raws: null, modos: {}, regioes: [novaRegiao("Resto da arte", null, null)] });
       const cm = v => fmt(v / st.dpi * 2.54);
       status("#stArte", `${st.doc.nome} · ${W} × ${H} px · ${cm(W)} × ${cm(H)} cm a ${Math.round(st.dpi)} dpi`, "ok");
       $("#cvOrig").width = w; $("#cvOrig").height = h; $("#cvOrig").getContext("2d").drawImage(cv, 0, 0);
@@ -178,8 +178,8 @@ function opcoes(dpi) {
   const mm = v => v / 25.4 * dpi, regioes = [], flat = [];
   st.regioes.forEach((r, ri) => {
     const idx = r.pal.cores.map((_, i) => i).filter(i => r.papeis[i] !== "camiseta");
-    // cor em degradê (glow) não leva base: a base é chapada e o degradê viraria cinza no fotolito
-    regioes.push({ cores: idx.map(i => r.pal.cores[i]), papeis: idx.map(i => r.papeis[i]), base: idx.map(i => r.base[i] && !st.degradeIdx.has(ri + ":" + i)) });
+    // a base acompanha as cores, inclusive no degradê (ali ela também sai reticulada)
+    regioes.push({ cores: idx.map(i => r.pal.cores[i]), papeis: idx.map(i => r.papeis[i]), base: idx.map(i => r.base[i]) });
     idx.forEach(i => flat.push({ chave: ri + ":" + i, cor: r.pal.cores[i], papel: r.papeis[i], nome: r.nomes[i] }));
   });
   return {
@@ -195,16 +195,8 @@ function separar() { clearTimeout(timer); timer = setTimeout(separarAgora, 120);
 function separarAgora() {
   if (!st.regioes.length || !st.regioes[0].pal) return;
   const p = st.prev, dpiPrev = st.dpi * p.k, camHex = $("#camiseta").value, masks = st.regioes.map(r => r.mPrev);
-  // 1º separa sem base para saber quais cores são degradê; depois monta a base só com as chapadas
-  st.degradeIdx = new Set();
-  const o = opcoes(dpiPrev);
-  const sep = M.pipeline(p.px, p.w, p.h, Object.assign(comMascaras(o, masks), { baseOn: false }));
-  sep.canais.forEach((c, k) => { if (o.flat[k].papel === "imprimir" && M.tipoTom(c) === "degrade") st.degradeIdx.add(o.flat[k].chave); });
-  const baseFlags = [].concat.apply([], opcoes(dpiPrev).regioes.map(r => r.base));
-  if (o.baseOn) {
-    const usar = o.flat.map((_, k) => k).filter(k => o.flat[k].papel === "imprimir" && baseFlags[k]);
-    if (usar.length) sep.base = M.baseBranca(usar.map(k => sep.canais[k]), p.w, p.h, { choke: o.chokePx });
-  }
+  const o = opcoes(dpiPrev), baseFlags = [].concat.apply([], o.regioes.map(r => r.base));
+  const sep = M.pipeline(p.px, p.w, p.h, comMascaras(o, masks));
   const kTraco = o.flat.findIndex(f => f.papel === "traco");
   let plano = sep.canais.map((c, k) => ({ tipo: "cor", k, nome: o.flat[k].nome, hex: o.flat[k].cor.hex, lab: o.flat[k].cor.lab, tom: M.tipoTom(c), canal: c }))
     .filter(t => o.flat[t.k].papel === "imprimir" && M.cobertura(t.canal) > 0.00005);
@@ -213,29 +205,40 @@ function separarAgora() {
   plano = M.ordenar(plano).map(i => plano[i]);
   if (sep.base) plano.unshift({ tipo: "base", nome: "Base branca", hex: "#ffffff", lab: [100, 0, 0], tom: "chapado", canal: sep.base, base: true });
   plano.forEach((t, n) => { t.num = "#" + String(n + 1).padStart(2, "0"); });
-  const lim = limiteLimpeza();
-  plano.forEach(t => { if (t.tom !== "degrade") t.canal = M.limpar(t.canal, lim); });
-  const fixos = plano.map((t, i) => t.tipo !== "cor" || t.tom === "degrade" ? i : -1).filter(i => i >= 0);
+  // prévia = cada fotolito visto de longe (chapado no limiar, degradê no tom com ponto mín./máx.)
+  // modo de cada tela (Auto / Chapado / Retícula) escolhido por quem separa
+  const rf = retFilme(dpiPrev);
+  plano.forEach(t => {
+    t.chaveModo = t.tipo === "cor" ? o.flat[t.k].chave : t.tipo;
+    t.modo = st.modos[t.chaveModo] || "auto";
+    t.filmePrev = M.simularFilme(t.canal, p.w, p.h, Object.assign({ modo: t.modo }, rf));
+    t.ret = M.fracaoDegrade(t.canal, p.w, p.h, rf.raio, t.modo);
+  });
+  const fixos = plano.map((t, i) => t.tipo !== "cor" ? i : -1).filter(i => i >= 0);
   st.grupos = $("#juntar").checked ? M.agrupar(plano.map(t => t.canal), p.w, p.h, { margem: +$("#folga").value / 2.54 * dpiPrev, fixos }) : plano.map((_, i) => [i]);
   st.grupos.sort((a, b) => a[0] - b[0]);
   st.plano = plano; st.sep = sep;
-  st.assin = JSON.stringify([st.regioes.map(r => r.raw), o.flat.map(f => [f.chave, f.cor.hex, f.papel]), baseFlags, o.bordas, o.tracoCamiseta, $("#alcance").value, $("#trapMm").value, o.baseOn, $("#choke").value, $("#camiseta").value, lim]);
+  st.assin = JSON.stringify([st.regioes.map(r => r.raw), o.flat.map(f => [f.chave, f.cor.hex, f.papel]), baseFlags, o.bordas, o.tracoCamiseta, $("#alcance").value, $("#trapMm").value, o.baseOn, $("#choke").value, $("#camiseta").value]);
 
-  const prova = M.simular(plano.map(t => ({ canal: t.canal, hex: t.hex })), p.w, p.h, camHex);
+  const prova = M.simular(plano.map(t => ({ canal: t.filmePrev, hex: t.hex })), p.w, p.h, camHex);
   const cv = $("#cvProva"); cv.width = p.w; cv.height = p.h; cv.getContext("2d").putImageData(new ImageData(prova, p.w, p.h), 0, 0);
   status("#stPrev", `${plano.length} telas em ${st.grupos.length} fotolitos` + (sep.foraDaPaleta > 0.01 ? ` · ${fmt(sep.foraDaPaleta * 100)}% fora da paleta: aumente o máximo de cores` : ""), sep.foraDaPaleta > 0.01 ? "erro" : "ok");
   $("#telas").innerHTML = plano.map(t => `<div class="tela"><i style="background:${t.hex}"></i><b>${t.num}</b> ${esc(t.nome)}
-    ${t.base ? '<span class="tag base">base</span>' : t.traco ? '<span class="tag traco">traço</span>' : `<span class="tag ${t.tom}">${t.tom === "degrade" ? "degradê" : "chapado"}</span>`}
-    <span class="hint">${fmt(M.cobertura(t.canal) * 100)}%</span></div>`).join("");
+    ${t.base ? '<span class="tag base">base</span>' : t.traco ? '<span class="tag traco">traço</span>' : ""}
+    ${t.ret >= 0.02 ? `<span class="tag degrade">${t.ret > 0.9 ? "retícula" : "misto " + Math.round(t.ret * 100) + "% ret."}</span>` : '<span class="tag">chapado</span>'}
+    <span class="hint">${fmt(M.cobertura(t.canal) * 100)}%</span>
+    <select class="modo" data-modo="${t.chaveModo}" title="Auto: chapa o sólido e reticula o degradê">${[["auto", "Auto"], ["chapado", "Chapado"], ["reticula", "Retícula"]].map(x => `<option value="${x[0]}" ${t.modo === x[0] ? "selected" : ""}>${x[1]}</option>`).join("")}</select></div>`).join("");
   ["#btnCanais", "#btnFotos", "#btnFicha", "#btnProva"].forEach(id => { $(id).disabled = !plano.length || (id !== "#btnFicha" && !CEP); });
   salvarPreferencias();
 }
+
+$("#telas").addEventListener("change", e => { const k = e.target.dataset.modo; if (k != null) { st.modos[k] = e.target.value; separar(); } });
 
 /* ---------- 5. resolução cheia ---------- */
 // separa a imagem inteira em faixas e grava um .raw por tela (8 bits, preto = tinta)
 async function processarCheio() {
   if (st.raws && st.raws.assin === st.assin) return st.raws;
-  const W = st.W, H = st.H, o = opcoes(st.dpi), s = M.sobra(o), plano = st.plano, lim = limiteLimpeza();
+  const W = st.W, H = st.H, o = opcoes(st.dpi), s = M.sobra(o), plano = st.plano;
   const g = st.full.getContext("2d");
   const arqs = plano.map(t => path.join(TMP, "tela" + t.num.slice(1) + ".raw"));
   const fds = arqs.map(a => fs.openSync(a, "w"));
@@ -250,9 +253,8 @@ async function processarCheio() {
       const de = (y0 - a) * W, n = Math.min(FAIXA, H - y0) * W;
       plano.forEach((t, i) => {
         const c = t.tipo === "base" ? r.base : t.tipo === "traco" ? r.traco : r.canais[t.k];
-        const corte = t.tom !== "degrade" ? Math.round(lim * 255) : 0;
         const out = Buf.alloc(n, 255);
-        if (c) for (let q = 0; q < n; q++) { const v = c[de + q]; out[q] = v < corte ? 255 : 255 - v; }
+        if (c) for (let q = 0; q < n; q++) out[q] = 255 - c[de + q];
         fs.writeSync(fds[i], out);
       });
       barra((y0 + FAIXA) / H);
@@ -279,30 +281,57 @@ $("#btnCanais").onclick = () => tarefa("#btnCanais", async () => {
   status("#stSaida", `${r.canais.length} canais criados. Confira no painel Canais.`, "ok");
 });
 
-$("#btnFotos").onclick = () => tarefa("#btnFotos", async () => {
-  const raws = await processarCheio();
-  status("#stSaida", "Montando os fotolitos…");
-  const fotolitos = st.grupos.map((g, k) => {
-    let raw = raws.arqs[g[0]];
-    if (g.length > 1) { // une as telas do grupo: o mais escuro (mais tinta) vence
-      const u = fs.readFileSync(raws.arqs[g[0]]);
-      for (const i of g.slice(1)) { const b = fs.readFileSync(raws.arqs[i]); for (let q = 0; q < u.length; q++) if (b[q] < u[q]) u[q] = b[q]; }
-      raw = path.join(TMP, "fotolito" + k + ".raw"); fs.writeFileSync(raw, u);
+/* ---------- fotolito misto (chapado + retícula), feito aqui, na resolução de saída ---------- */
+// parâmetros da retícula para uma imagem com `dpi` efetivos
+function retFilme(dpi) { return { raio: +$("#raioDeg").value / 25.4 * dpi, pontoMin: +$("#pontoMin").value / 100, pontoMax: +$("#pontoMax").value / 100 }; }
+// escala inteira até o dpi pedido (ex.: 300 → 900 = 3×)
+function saidaFilme() { const s = Math.max(1, Math.round(+$("#dpiRet").value / st.dpi)); return { s, dpi: st.dpi * s }; }
+// percorre as telas `idxs` em faixas e entrega o fotolito 1 bit de cada uma, faixa a faixa (255 = tinta)
+async function porFaixasFilme(arqs, idxs, fn) {
+  const W = st.W, H = st.H, rf = retFilme(st.dpi), sd = saidaFilme(), m = 2 * Math.max(1, Math.round(rf.raio)) + 2;
+  const op = Object.assign({ s: sd.s, lpi: +$("#lpi").value, angulo: +$("#ang").value, dpiSaida: sd.dpi }, rf);
+  const fds = idxs.map(i => fs.openSync(arqs[i], "r"));
+  try {
+    for (let y0 = 0; y0 < H; y0 += FAIXA) {
+      const a = Math.max(0, y0 - m), b = Math.min(H, y0 + FAIXA + m), n = (b - a) * W;
+      const filmes = fds.map((fd, j) => {
+        const buf = Buf.alloc(n); fs.readSync(fd, buf, 0, n, a * W);
+        const c = new Uint8Array(n); for (let q = 0; q < n; q++) c[q] = 255 - buf[q];
+        return M.filme(c, W, b - a, Object.assign({ yIni: y0 - a, yFim: Math.min(y0 + FAIXA, H) - a, yGlobal: a, modo: st.plano[idxs[j]].modo }, op));
+      });
+      fn(filmes, y0, Math.min(FAIXA, H - y0));
+      await espera();
     }
-    const ts = g.map(i => st.plano[i]), nums = ts.map(t => t.num).join(" "), nomes = ts.map(t => t.nome).join(" + ");
-    const degrade = ts.length === 1 && ts[0].tom === "degrade";
-    return {
-      arquivo: (nums + " " + nomes).replace(/[\\/:*?"<>|]/g, "-") + ".pdf",
-      titulo: nums + "  " + nomes + "   |   " + nomeBase() + "   |   " + (degrade ? "retícula " + $("#lpi").value + " lpi " + $("#ang").value + "°" : "chapado") + " · " + $("#dpiRet").value + " dpi" +
+  } finally { fds.forEach(fd => fs.closeSync(fd)); }
+}
+
+$("#btnFotos").onclick = () => tarefa("#btnFotos", async () => {
+  const raws = await processarCheio(), sd = saidaFilme(), W2 = st.W * sd.s, H2 = st.H * sd.s;
+  const saida = path.join(st.doc.pasta, "Fotolitos - " + nomeBase()), arquivos = [], N = st.grupos.length;
+  for (let k = 0; k < N; k++) {
+    const g = st.grupos[k], ts = g.map(i => st.plano[i]), nums = ts.map(t => t.num).join(" "), nomes = ts.map(t => t.nome).join(" + ");
+    const raw = path.join(TMP, "fotolito.raw"), fd = fs.openSync(raw, "w");
+    try {
+      await porFaixasFilme(raws.arqs, g, (filmes, y0) => {
+        const out = Buf.alloc(filmes[0].length, 255); // várias cores na mesma folha: soma as áreas
+        for (const f of filmes) for (let q = 0; q < f.length; q++) if (f[q]) out[q] = 0;
+        fs.writeSync(fd, out);
+        barra((k + (y0 + FAIXA) / st.H) / N);
+        status("#stSaida", `Fotolito ${k + 1} de ${N} (${nums})… ${Math.min(100, Math.round((y0 + FAIXA) / st.H * 100))}%`);
+      });
+    } finally { fs.closeSync(fd); }
+    const ret = ts.some(t => t.ret >= 0.02);
+    status("#stSaida", `Fotolito ${k + 1} de ${N}: gravando o PDF no Photoshop…`);
+    const r = await host("gerarFotolitos", { saida, margemCm: +$("#margemCm").value, espelhar: $("#espelhar").checked, fotolitos: [{
+      arquivo: (nums + " " + nomes).replace(/[\\/:*?"<>|]/g, "-") + ".pdf", raw, w: W2, h: H2, dpi: sd.dpi,
+      titulo: nums + "  " + nomes + "   |   " + nomeBase() + "   |   " + (ret ? "chapado + retícula " + $("#lpi").value + " lpi " + $("#ang").value + "°" : "chapado") + " · " + sd.dpi + " dpi" +
         (ts.length > 1 ? "   |   " + ts.length + " telas: grave cada cor na sua tela, bloqueando as outras áreas" : ""),
-      raw, dpi: +$("#dpiRet").value, reticula: degrade ? { lpi: +$("#lpi").value, angulo: +$("#ang").value } : null,
-    };
-  });
-  const saida = path.join(st.doc.pasta, "Fotolitos - " + nomeBase());
-  status("#stSaida", `Gerando ${fotolitos.length} PDFs no Photoshop (pode demorar)…`);
-  const r = await host("gerarFotolitos", { w: st.W, h: st.H, dpi: st.dpi, saida, margemCm: +$("#margemCm").value, espelhar: $("#espelhar").checked, fotolitos });
-  status("#stSaida", `${r.arquivos.length} fotolitos em ${r.pasta}`, "ok");
-  host("abrirPasta", { pasta: r.pasta }).catch(() => {});
+    }] });
+    arquivos.push.apply(arquivos, r.arquivos);
+  }
+  try { fs.unlinkSync(path.join(TMP, "fotolito.raw")); } catch (e) { /* já removido */ }
+  status("#stSaida", `${arquivos.length} fotolitos em ${saida}`, "ok");
+  host("abrirPasta", { pasta: saida }).catch(() => {});
 });
 
 $("#btnFicha").onclick = () => tarefa("#btnFicha", async () => {
@@ -342,40 +371,36 @@ function png(linhas, w, h) {
   return Buf.concat([Buf.from([137, 80, 78, 71, 13, 10, 26, 10]), bloco("IHDR", ih), bloco("IDAT", zlib.deflateSync(linhas, { level: 3 })), bloco("IEND", Buf.alloc(0))]);
 }
 
-// prova de cor em resolução cheia, a partir das telas finais (mesma ordem de impressão), aberta como aba
+// prova estampada em tamanho real: os fotolitos prontos (chapado + pontos de retícula), tela a tela na
+// ordem de impressão, cada um com a cor da sua tinta, sobre a camiseta; aberta como aba no Photoshop
 $("#btnProva").onclick = () => tarefa("#btnProva", async () => {
-  const raws = await processarCheio();
-  const W = st.W, H = st.H, cam = M.hex2rgb($("#camiseta").value), cores = st.plano.map(t => M.hex2rgb(t.hex));
-  const arq = path.join(TMP, "Prova de cor - " + nomeBase().replace(/[\\/:*?"<>|]/g, "-") + ".png");
-  const fds = raws.arqs.map(a => fs.openSync(a, "r")), partes = [];
-  try {
-    for (let y0 = 0; y0 < H; y0 += FAIXA) {
-      const nl = Math.min(FAIXA, H - y0), n = nl * W;
-      const linhas = fds.map(fd => { const b = Buf.alloc(n); fs.readSync(fd, b, 0, n, y0 * W); return b; });
-      const rgb = Buf.alloc(nl * (W * 3 + 1)); // cada linha do PNG começa com o byte de filtro (0)
-      for (let q = 0; q < n; q++) {
-        let r = cam[0], g = cam[1], b = cam[2];
-        for (let k = 0; k < linhas.length; k++) {
-          const a = (255 - linhas[k][q]) / 255; if (!a) continue;
-          const c = cores[k]; r += (c[0] - r) * a; g += (c[1] - g) * a; b += (c[2] - b) * a;
-        }
-        const y = Math.floor(q / W), o = y * (W * 3 + 1) + 1 + (q - y * W) * 3;
-        rgb[o] = r; rgb[o + 1] = g; rgb[o + 2] = b;
+  const raws = await processarCheio(), s = saidaFilme().s;
+  const W = st.W, H = st.H, L = W * 3 + 1, cam = M.hex2rgb($("#camiseta").value), N = st.plano.length;
+  const arq = path.join(TMP, "Prova estampada - " + nomeBase().replace(/[\\/:*?"<>|]/g, "-") + ".png");
+  const rgb = Buf.alloc(H * L); // cada linha do PNG começa com o byte de filtro (0)
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const o = y * L + 1 + x * 3; rgb[o] = cam[0]; rgb[o + 1] = cam[1]; rgb[o + 2] = cam[2]; }
+  for (let i = 0; i < N; i++) {
+    const c = M.hex2rgb(st.plano[i].hex), W2 = W * s;
+    await porFaixasFilme(raws.arqs, [i], (filmes, y0, nl) => {
+      const f = filmes[0];
+      // fotolito na resolução de saída → fração de tinta em cada pixel da arte (os pontos aparecem)
+      for (let y = 0; y < nl; y++) for (let x = 0; x < W; x++) {
+        let n = 0;
+        for (let dy = 0; dy < s; dy++) { const r = (y * s + dy) * W2 + x * s; for (let dx = 0; dx < s; dx++) if (f[r + dx]) n++; }
+        if (!n) continue;
+        const a = n / (s * s), o = (y0 + y) * L + 1 + x * 3;
+        rgb[o] += (c[0] - rgb[o]) * a; rgb[o + 1] += (c[1] - rgb[o + 1]) * a; rgb[o + 2] += (c[2] - rgb[o + 2]) * a;
       }
-      partes.push(rgb);
-      barra((y0 + FAIXA) / H);
-      status("#stSaida", `Montando a prova em tamanho real… ${Math.min(100, Math.round((y0 + FAIXA) / H * 100))}%`);
-      await espera();
-    }
-  } finally { fds.forEach(fd => fs.closeSync(fd)); }
-  fs.writeFileSync(arq, png(Buf.concat(partes), W, H));
+      barra((i + (y0 + FAIXA) / H) / N);
+      status("#stSaida", `Prova estampada: tela ${i + 1} de ${N}…`);
+    });
+  }
+  fs.writeFileSync(arq, png(rgb, W, H));
   await host("abrirProva", { arquivo: arq, dpi: st.dpi });
-  status("#stSaida", "Prova aberta numa aba nova, no mesmo tamanho da arte. Use Janela > Organizar para ver lado a lado.", "ok");
+  status("#stSaida", "Prova estampada aberta numa aba nova, no mesmo tamanho da arte (Janela > Organizar para ver lado a lado).", "ok");
 });
 // clique na prévia: amplia na largura do painel (e volta)
 $("#prev").addEventListener("click", () => $("#prev").classList.toggle("grande"));
-
-const limiteLimpeza = () => +$("#limpeza").value / 100;
 
 async function tarefa(id, fn) {
   const b = $(id); b.disabled = true; barra(0);
@@ -384,19 +409,21 @@ async function tarefa(id, fn) {
 }
 
 /* ---------- controles e preferências ---------- */
-const SAIDAS = [["maxCores", "oMax", v => v, true], ["mesclar", "oMes", v => v, true], ["alcance", "oAlc", v => fmt(+v) + " mm"], ["trapMm", "oTrap", v => fmt(+v) + " mm"], ["choke", "oChoke", v => fmt(+v) + " mm"], ["limpeza", "oLimp", v => v + "%"]];
+const SAIDAS = [["maxCores", "oMax", v => v, true], ["mesclar", "oMes", v => v, true], ["alcance", "oAlc", v => fmt(+v) + " mm"], ["trapMm", "oTrap", v => fmt(+v) + " mm"], ["choke", "oChoke", v => fmt(+v) + " mm"], ["raioDeg", "oRaio", v => fmt(+v) + " mm"]];
 SAIDAS.forEach(x => {
   const el = $("#" + x[0]); $("#" + x[1]).textContent = x[2](el.value);
   el.addEventListener("input", () => { $("#" + x[1]).textContent = x[2](el.value); x[3] ? calcPaleta() : separar(); });
 });
-["camiseta", "bordas", "tracoOn", "baseOn", "juntar", "folga"].forEach(id => $("#" + id).addEventListener("input", separar));
-const PREF = ["maxCores", "mesclar", "bordas", "tracoOn", "alcance", "trapMm", "baseOn", "choke", "limpeza", "camPrev", "substituir", "lpi", "ang", "dpiRet", "margemCm", "folga", "juntar", "espelhar"];
+["camiseta", "bordas", "tracoOn", "baseOn", "juntar", "folga", "pontoMin", "pontoMax"].forEach(id => $("#" + id).addEventListener("input", separar));
+// v2: retícula mista e "passagem entre cores" com degradê por padrão (a v1 guardava "auto")
+const CHAVE_PREF = "estamparia-separacao-v2";
+const PREF = ["maxCores", "mesclar", "bordas", "tracoOn", "alcance", "trapMm", "baseOn", "choke", "raioDeg", "pontoMin", "pontoMax", "camPrev", "substituir", "lpi", "ang", "dpiRet", "margemCm", "folga", "juntar", "espelhar"];
 function salvarPreferencias() {
-  try { localStorage.setItem("estamparia-separacao", JSON.stringify(PREF.reduce((o, id) => { const el = $("#" + id); o[id] = el.type === "checkbox" ? el.checked : el.value; return o; }, {}))); } catch (e) { /* sem armazenamento */ }
+  try { localStorage.setItem(CHAVE_PREF, JSON.stringify(PREF.reduce((o, id) => { const el = $("#" + id); o[id] = el.type === "checkbox" ? el.checked : el.value; return o; }, {}))); } catch (e) { /* sem armazenamento */ }
 }
 (function carregarPreferencias() {
   let p = null;
-  try { p = JSON.parse(localStorage.getItem("estamparia-separacao")); } catch (e) { /* sem armazenamento */ }
+  try { p = JSON.parse(localStorage.getItem(CHAVE_PREF)); } catch (e) { /* sem armazenamento */ }
   if (p) PREF.forEach(id => { const el = $("#" + id); if (p[id] === undefined) return; if (el.type === "checkbox") el.checked = p[id]; else el.value = p[id]; });
   SAIDAS.forEach(x => { $("#" + x[1]).textContent = x[2]($("#" + x[0]).value); });
   if (!CEP) status("#stArte", "Fora do Photoshop: modo de teste. Clique acima para escolher uma imagem.");

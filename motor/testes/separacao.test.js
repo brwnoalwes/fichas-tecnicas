@@ -229,6 +229,68 @@ test("regiões: seleção suave não vira meia-tinta e região sobreposta não i
   assert.equal(r.canais[2].some(v => v), false, "nada sobra para o resto");
 });
 
+// tela de teste: quadrado chapado com borda suavizada de 1 px (x 10–50) + degradê largo (x 70–190)
+function telaMista(w = 200, h = 80) {
+  const c = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let v = 0;
+    if (x >= 10 && x < 50 && y >= 10 && y < 70) v = x === 10 || x === 49 || y === 10 || y === 69 ? 128 : 255;
+    if (x >= 70 && x < 190) v = Math.round((x - 70) / 120 * 255);
+    c[y * w + x] = v;
+  }
+  return { c, w, h };
+}
+const OF = { s: 3, raio: 3, pontoMin: 0.08, pontoMax: 0.92, lpi: 45, angulo: 22.5, dpiSaida: 900 };
+
+test("fotolito misto: 1 bit, chapado sem ponto na borda, degradê reticulado com o tom certo", () => {
+  const { c, w, h } = telaMista();
+  const f = M.filme(c, w, h, Object.assign({ yIni: 0, yFim: h, yGlobal: 0 }, OF)), W = w * 3;
+  assert.ok(f.every(v => v === 0 || v === 255), "só preto ou branco");
+  // miolo do quadrado chapado: tudo tinta; linha do meio cruzando a borda esquerda: uma transição só
+  for (let X = 40; X < 140; X++) assert.equal(f[120 * W + X], 255);
+  let trocas = 0; for (let X = 15; X < 60; X++) if (f[120 * W + X] !== f[120 * W + X - 1]) trocas++;
+  assert.equal(trocas, 1, "borda do chapado nítida, sem pontinhos");
+  // degradê: cobertura numa janela acompanha o tom (≈ 50% no meio, ≈ 25% a um quarto)
+  const cob = (x0, x1) => { let n = 0, t = 0; for (let Y = 60; Y < 180; Y++) for (let X = x0 * 3; X < x1 * 3; X++) { t++; if (f[Y * W + X]) n++; } return n / t; };
+  assert.ok(Math.abs(cob(120, 140) - 0.5) < 0.06, "meio do degradê: " + cob(120, 140).toFixed(2));
+  assert.ok(Math.abs(cob(92, 108) - 0.24) < 0.08, "um quarto: " + cob(92, 108).toFixed(2));
+  // retícula de verdade: dentro do degradê há várias trocas preto/branco por linha (células de 20 px a 900 dpi/45 lpi)
+  let trocasDeg = 0; for (let Y = 60; Y < 180; Y++) for (let X = 100 * 3; X < 160 * 3; X++) if (f[Y * W + X] !== f[Y * W + X - 1]) trocasDeg++;
+  assert.ok(trocasDeg / 120 > 6, "trocas por linha no degradê: " + (trocasDeg / 120).toFixed(1));
+});
+
+test("fotolito em faixas = fotolito inteiro (retícula sem emenda)", () => {
+  const { c, w, h } = telaMista();
+  const inteiro = M.filme(c, w, h, Object.assign({ yIni: 0, yFim: h, yGlobal: 0 }, OF));
+  const m = 2 * OF.raio + 2, faixa = 23, partes = [];
+  for (let y0 = 0; y0 < h; y0 += faixa) {
+    const a = Math.max(0, y0 - m), b = Math.min(h, y0 + faixa + m);
+    partes.push(M.filme(c.subarray(a * w, b * w), w, b - a, Object.assign({ yIni: y0 - a, yFim: Math.min(y0 + faixa, h) - a, yGlobal: a }, OF)));
+  }
+  const junto = new Uint8Array(inteiro.length); let o = 0;
+  for (const p of partes) { junto.set(p, o); o += p.length; }
+  assert.deepEqual(junto, inteiro);
+});
+
+test("modo da tela: chapado nunca reticula, retícula reticula todo meio-tom", () => {
+  const { c, w, h } = telaMista();
+  const base = Object.assign({ yIni: 0, yFim: h, yGlobal: 0 }, OF), W = w * 3;
+  const chap = M.filme(c, w, h, Object.assign({ modo: "chapado" }, base));
+  let trocas = 0; for (let X = 100 * 3; X < 160 * 3; X++) if (chap[120 * W + X] !== chap[120 * W + X - 1]) trocas++;
+  assert.equal(trocas, 1, "degradê chapado no limiar: uma transição só");
+  const ret = M.simularFilme(c, w, h, { raio: 3, modo: "reticula" });
+  assert.ok(ret[40 * w + 10] > 100 && ret[40 * w + 10] < 160, "até a borda 50% do chapado vira retícula");
+  assert.equal(M.fracaoDegrade(c, w, h, 3, "chapado"), 0);
+});
+
+test("simularFilme: chapa fora do degradê, mantém o tom dentro", () => {
+  const { c, w, h } = telaMista();
+  const s = M.simularFilme(c, w, h, { raio: 3 });
+  assert.equal(s[40 * w + 10], 255, "borda 50% do chapado vira cheio");
+  assert.ok(s[40 * w + 130] > 100 && s[40 * w + 130] < 160, "meio do degradê mantém o tom");
+  assert.equal(s[40 * w + 72], 0, "abaixo do ponto mínimo some");
+});
+
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {
   const w = 2, h = 1, cheio = new Uint8Array([255, 0]);
   const out = M.simular([{ canal: cheio, hex: "#ffffff" }, { canal: cheio, hex: "#d21e28" }], w, h, "#111111");

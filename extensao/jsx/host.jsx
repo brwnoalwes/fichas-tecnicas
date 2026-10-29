@@ -132,40 +132,34 @@ function _marca(doc, x, y, t) {
 
 /**
  * Gera um PDF por fotolito.
- * a = {w, h, dpi, saida, margemCm, espelhar, fotolitos:[{arquivo, titulo, raw, dpi, reticula:{lpi, angulo}|null}]}
+ * O .raw já vem pronto do painel: 1 bit de fato (0 ou 255), na resolução de saída, com o chapado e os
+ * pontos de retícula. Aqui só entram margem, marcas de registro, título e a gravação em PDF.
+ * a = {saida, margemCm, espelhar, fotolitos:[{arquivo, titulo, raw, w, h, dpi}]}
  */
 function gerarFotolitos(s) {
     try {
         var a = _ler(s);
         return _comPixels(function () {
             var pasta = new Folder(a.saida); if (!pasta.exists) pasta.create();
-            var m = Math.round(a.margemCm / 2.54 * a.dpi), feitos = [];
+            var feitos = [];
             var fundo = app.backgroundColor; app.backgroundColor = _branco();
             try {
                 for (var k = 0; k < a.fotolitos.length; k++) {
-                    var f = a.fotolitos[k];
-                    var d = _abrirRaw(f.raw, a.w, a.h, a.dpi);
+                    var f = a.fotolitos[k], m = Math.round(a.margemCm / 2.54 * f.dpi);
+                    var d = _abrirRaw(f.raw, f.w, f.h, f.dpi);
                     try {
-                        d.resizeCanvas(UnitValue(a.w + 2 * m, "px"), UnitValue(a.h + 2 * m, "px"), AnchorPosition.MIDDLECENTER);
-                        var W = a.w + 2 * m, H = a.h + 2 * m, t = Math.round(m * 0.55);
+                        d.resizeCanvas(UnitValue(f.w + 2 * m, "px"), UnitValue(f.h + 2 * m, "px"), AnchorPosition.MIDDLECENTER);
+                        var W = f.w + 2 * m, H = f.h + 2 * m, t = Math.round(m * 0.55);
                         _marca(d, W / 2, m / 2, t); _marca(d, W / 2, H - m / 2, t); _marca(d, m / 2, H / 2, t); _marca(d, W - m / 2, H / 2, t);
                         var cam = d.artLayers.add(); cam.kind = LayerKind.TEXT;
                         var ti = cam.textItem;
                         ti.contents = f.titulo; ti.size = 11; ti.color = _preto();
                         ti.position = [UnitValue(m + t, "px"), UnitValue(Math.round(m * 0.62), "px")];
                         d.flatten();
-                        // fotolito sempre 1 bit (só preto ou branco): cinza no filme grava falhado.
-                        // Degradê: retícula de meio-tom. Chapado: limiar 50% (a borda suave vira borda
-                        // nítida, posicionada na resolução de saída, que é maior que a do documento).
+                        // PDF em 1 bit (o título, suavizado, também vira preto/branco no limiar)
                         var o = new BitmapConversionOptions();
                         o.resolution = f.dpi;
-                        if (f.reticula) {
-                            o.method = BitmapConversionType.HALFTONESCREEN;
-                            o.frequency = f.reticula.lpi; o.angle = f.reticula.angulo;
-                            o.shape = BitmapHalfToneType.ROUND;
-                        } else {
-                            o.method = BitmapConversionType.HALFTHRESHOLD;
-                        }
+                        o.method = BitmapConversionType.HALFTHRESHOLD;
                         d.changeMode(ChangeMode.BITMAP, o);
                         if (a.espelhar) d.flipCanvas(Direction.HORIZONTAL);
                         var p = new PDFSaveOptions(); p.layers = false; p.preserveEditing = false;

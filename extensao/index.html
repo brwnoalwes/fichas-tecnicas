@@ -45,7 +45,8 @@ label.chk{display:flex;gap:6px;align-items:center}
 .tela{display:flex;gap:6px;align-items:center;padding:2px 0}
 .tela i{width:12px;height:12px;border-radius:2px;border:1px solid #0008;flex:none}
 .tag{font-size:9.5px;padding:0 5px;border-radius:8px;background:#555;color:#ddd}
-.tag.degrade{background:#6a3d9a}.tag.traco{background:#111}.tag.base{background:#2b5b93}
+.tag.degrade{background:#6a3d9a}
+.tela select.modo{margin-left:auto;font-size:11px;padding:1px 3px}.tag.traco{background:#111}.tag.base{background:#2b5b93}
 .barra{height:4px;background:#2a2a2a;border-radius:2px;overflow:hidden}
 .barra i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
 </style>
@@ -68,19 +69,26 @@ label.chk{display:flex;gap:6px;align-items:center}
 
   <div class="sec"><h3><span class="n">3</span>Separação</h3><div class="bd">
     <div class="row"><label class="f">Cor da camiseta<input type="color" id="camiseta" value="#111111"></label>
-      <label class="f">Bordas<select id="bordas"><option value="auto">Automático</option><option value="suaves">Suaves</option><option value="duras">Duras</option></select></label></div>
+      <label class="f">Passagem entre cores<select id="bordas"><option value="suaves">Degradê (vira retícula)</option><option value="auto">Seca entre tintas</option><option value="duras">Tudo seco</option></select></label></div>
     <label class="chk"><input type="checkbox" id="tracoOn" checked> Preto da camiseta dentro da arte vira traço por cima</label>
     <label class="f">Alcance do traço<div class="row"><input type="range" id="alcance" min="0.2" max="6" step="0.1" value="2"><output id="oAlc"></output></div></label>
     <label class="f">Trap (cores sob o traço)<div class="row"><input type="range" id="trapMm" min="0" max="1.5" step="0.05" value="0.3"><output id="oTrap"></output></div></label>
     <label class="chk"><input type="checkbox" id="baseOn" checked> Base branca</label>
     <label class="f">Retração da base (choke)<div class="row"><input type="range" id="choke" min="0" max="1.5" step="0.05" value="0.2"><output id="oChoke"></output></div></label>
-    <div class="hint">Cores em degradê (glow) não levam base.</div>
-    <label class="f">Limpar meia-tinta fraca nas telas chapadas<div class="row"><input type="range" id="limpeza" min="0" max="60" step="5" value="30"><output id="oLimp"></output></div></label>
+  </div></div>
+
+  <div class="sec"><h3><span class="n">R</span>Retícula</h3><div class="bd">
+    <div class="hint">Cada tela é mista, como na separação à mão: o que é sólido sai chapado; glow, esfumado e passagens entre cores saem reticulados.</div>
+    <label class="f">Largura mínima de um degradê<div class="row"><input type="range" id="raioDeg" min="0.1" max="1.5" step="0.05" value="0.3"><output id="oRaio"></output></div></label>
+    <div class="row"><label class="f">Ponto mínimo (%)<input type="number" id="pontoMin" value="8" min="0" max="30"></label>
+      <label class="f">Ponto máximo (%)<input type="number" id="pontoMax" value="92" min="70" max="100"></label></div>
+    <div class="hint">Abaixo do mínimo o ponto não grava (some); acima do máximo ele fecha (vira chapado).</div>
   </div></div>
 
   <div class="sec"><h3><span class="n">4</span>Prévia</h3><div class="bd">
     <div class="prev" id="prev" title="Clique para ampliar"><canvas id="cvOrig" title="Arte"></canvas><canvas id="cvProva" title="Prova de cor"></canvas></div>
-    <button class="btn" id="btnProva" disabled>Ver prova no tamanho da arte (abre no Photoshop)</button>
+    <div class="hint">Prévia = os fotolitos estampados vistos de longe. Para ver os pontos da retícula:</div>
+    <button class="btn" id="btnProva" disabled>Ver prova estampada no tamanho da arte (abre no Photoshop)</button>
     <div class="status" id="stPrev">—</div>
     <div class="telas" id="telas"></div>
   </div></div>
@@ -103,7 +111,7 @@ label.chk{display:flex;gap:6px;align-items:center}
     <div class="barra"><i id="barra"></i></div>
     <div class="status" id="stSaida">—</div>
   </div></div>
-  <div class="hint" style="text-align:center">Todo fotolito sai só em preto e branco (1 bit): degradês com retícula, chapados com limiar 50%.</div>
+  <div class="hint" style="text-align:center">Todo fotolito sai só em preto e branco (1 bit), na resolução escolhida: chapado onde é sólido, retícula onde é degradê.</div>
 </div>
 <script src="js/motor.js"></script>
 <script src="js/painel.js"></script>

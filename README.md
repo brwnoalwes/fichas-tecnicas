@@ -47,8 +47,12 @@ Os dados ficam no navegador; em **Arquivo → Salvar em um arquivo…** escolha 
    seleção** — cada região (Pele, Cabelo, Crânios…) ganha tintas próprias → ajustar
    paleta/nomes/papéis → **Criar canais no PSD** (um canal de cor especial por tela, na ordem de
    impressão, + “Camiseta (previa)”) → **Gerar fotolitos (PDF)** (pasta “Fotolitos - …” ao lado do
-   PSD; sempre 1 bit: chapado no limiar 50%, degradê com retícula; marcas de registro e título;
+   PSD; sempre 1 bit e **misto**: dentro da mesma tela, o sólido sai chapado e glow/esfumado/passagens
+   entre cores saem reticulados — retícula feita pela extensão na resolução de saída, com ponto
+   mínimo/máximo e modo por tela Auto/Chapado/Retícula; marcas de registro e título;
    cores que não se encostam podem dividir a folha — uma tela por cor, sempre) → **Enviar para a ficha**.
+   A prévia simula a estampa (fotolitos nas cores das tintas sobre a camiseta); **Ver prova estampada**
+   abre essa simulação em tamanho real, com os pontos de retícula, numa aba do Photoshop.
 4. Erros do painel: depuração remota em `http://localhost:8099` com o Photoshop aberto.
 
 Fora do Photoshop, `extensao/index.html` abre em modo de teste (copie `motor/separacao.js` para
