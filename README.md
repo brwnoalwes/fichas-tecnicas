@@ -43,6 +43,15 @@ Os dados ficam no navegador; em **Arquivo → Salvar em um arquivo…** escolha 
 1. Instalar/atualizar: `powershell -ExecutionPolicy Bypass -File extensao\instalar.ps1` (copia para
    `%APPDATA%\Adobe\CEP\extensions\com.estamparia.separacao`, junto com o motor).
 2. Abrir o Photoshop → **Janela → Extensões → Separacao Estamparia**.
+
+**Fluxo principal — separação feita por você (BBOXSTAMP ou manual):** com os canais de cor especial
+prontos no PSD, **Usar os canais já separados**. A extensão lê os canais na ordem do painel Canais (o
+“#NN” do nome vira o número da tela; “Camiseta” define a cor da camiseta; canais alfa são ignorados),
+decide chapado × retícula pelo degradê largo de cada canal (no Sukuna: só o #17 Glow reticula; pode
+trocar por canal) e faz prova estampada, fotolitos (conversão nativa do Photoshop: limiar 50% ou
+retícula de meio-tom, na resolução de saída) e o envio para a ficha — sem refazer a separação.
+
+**Separação automática** (artes simples: logo, tipografia, poucas cores):
 3. Com a arte aberta: **Ler a arte** → (opcional) selecionar áreas no Photoshop e **+ Região da
    seleção** — cada região (Pele, Cabelo, Crânios…) ganha tintas próprias → ajustar
    paleta/nomes/papéis → **Criar canais no PSD** (um canal de cor especial por tela, na ordem de

@@ -132,9 +132,10 @@ function _marca(doc, x, y, t) {
 
 /**
  * Gera um PDF por fotolito.
- * O .raw já vem pronto do painel: 1 bit de fato (0 ou 255), na resolução de saída, com o chapado e os
- * pontos de retícula. Aqui só entram margem, marcas de registro, título e a gravação em PDF.
- * a = {saida, margemCm, espelhar, fotolitos:[{arquivo, titulo, raw, w, h, dpi}]}
+ * Separação automática: o .raw já vem pronto do painel (1 bit, na resolução de saída). Canais do
+ * documento: o .raw é o próprio canal (tons, resolução do documento) e a conversão é a do Photoshop
+ * (limiar 50% ou retícula de meio-tom), na resolução `saidaDpi`. Aqui entram margem, marcas, título e PDF.
+ * a = {saida, margemCm, espelhar, fotolitos:[{arquivo, titulo, raw, w, h, dpi, saidaDpi?, reticula?:{lpi, angulo}}]}
  */
 function gerarFotolitos(s) {
     try {
@@ -156,10 +157,18 @@ function gerarFotolitos(s) {
                         ti.contents = f.titulo; ti.size = 11; ti.color = _preto();
                         ti.position = [UnitValue(m + t, "px"), UnitValue(Math.round(m * 0.62), "px")];
                         d.flatten();
-                        // PDF em 1 bit (o título, suavizado, também vira preto/branco no limiar)
+                        // PDF em 1 bit. Com `reticula`, o .raw é o canal em tons e o Photoshop faz a
+                        // retícula de meio-tom nativa na saída (canais vindos do BBOXSTAMP/manual);
+                        // sem, limiar 50% (fotolito já pronto, ou canal chapado ampliado para a saída)
                         var o = new BitmapConversionOptions();
-                        o.resolution = f.dpi;
-                        o.method = BitmapConversionType.HALFTHRESHOLD;
+                        o.resolution = f.saidaDpi || f.dpi;
+                        if (f.reticula) {
+                            o.method = BitmapConversionType.HALFTONESCREEN;
+                            o.frequency = f.reticula.lpi; o.angle = f.reticula.angulo;
+                            o.shape = BitmapHalfToneType.ROUND;
+                        } else {
+                            o.method = BitmapConversionType.HALFTHRESHOLD;
+                        }
                         d.changeMode(ChangeMode.BITMAP, o);
                         if (a.espelhar) d.flipCanvas(Direction.HORIZONTAL);
                         var p = new PDFSaveOptions(); p.layers = false; p.preserveEditing = false;
@@ -212,6 +221,57 @@ function exportarSelecao(s) {
                 doc.activeChannels = doc.componentChannels;
             }
             return _json({ ok: true, raw: f.fsName, w: w, h: h });
+        });
+    } catch (e) { return _erro(e); }
+}
+
+// copia o canal `canal` do documento `doc` para um .raw cinza (preto = tinta, como no painel Canais)
+function _canalParaRaw(doc, canal, arquivo) {
+    var w = doc.width.as("px"), h = doc.height.as("px"), nomeDoc = doc.name;
+    var tmp = app.documents.add(UnitValue(w, "px"), UnitValue(h, "px"), doc.resolution, "sep_canal", NewDocumentMode.GRAYSCALE, DocumentFill.WHITE);
+    try {
+        var d = new ActionDescriptor(), wd = new ActionDescriptor(), r = new ActionReference();
+        r.putName(charIDToTypeID("Chnl"), canal);
+        r.putName(charIDToTypeID("Dcmn"), nomeDoc);
+        wd.putReference(charIDToTypeID("T   "), r);
+        wd.putEnumerated(charIDToTypeID("Clcl"), charIDToTypeID("Clcn"), charIDToTypeID("Nrml"));
+        d.putObject(charIDToTypeID("With"), charIDToTypeID("Clcl"), wd);
+        executeAction(charIDToTypeID("AppI"), d, DialogModes.NO);
+        var o = new RawSaveOptions(); o.alphaChannels = false; o.spotColors = false;
+        var f = new File(arquivo);
+        tmp.saveAs(f, o, true, Extension.LOWERCASE);
+        return f.fsName;
+    } finally {
+        try { tmp.close(SaveOptions.DONOTSAVECHANGES); } catch (e) {}
+        app.activeDocument = doc;
+    }
+}
+
+/**
+ * Lê os canais já separados do documento ativo (BBOXSTAMP ou separação manual), na ordem do painel
+ * Canais: um .raw por canal + nome, tipo e cor. a = {pasta}
+ */
+function exportarCanais(s) {
+    try {
+        var a = _ler(s);
+        return _comPixels(function () {
+            var doc = app.activeDocument, origem = [], lista = [], k, ch;
+            for (k = 0; k < doc.channels.length; k++) {
+                ch = doc.channels[k];
+                if (ch.kind != ChannelType.COMPONENT && ch.name.indexOf("sep_") != 0) origem.push(ch);
+            }
+            if (!origem.length) return _json({ ok: false, erro: "Este documento nao tem canais de cor especial nem alfa. Separe primeiro (BBOXSTAMP ou manual) e tente de novo." });
+            for (k = 0; k < origem.length; k++) {
+                ch = origem[k];
+                var info = { nome: ch.name, tipo: ch.kind == ChannelType.SPOTCOLOR ? "spot" : ch.kind == ChannelType.MASKEDAREA ? "mascara" : "selecao" };
+                if (ch.kind == ChannelType.SPOTCOLOR) {
+                    try { info.hex = "#" + ch.color.rgb.hexValue; info.lab = [ch.color.lab.l, ch.color.lab.a, ch.color.lab.b]; info.solidez = ch.opacity; } catch (e) {}
+                }
+                info.raw = _canalParaRaw(doc, ch.name, a.pasta + "/canal" + (k < 10 ? "0" : "") + k + ".raw");
+                lista.push(info);
+            }
+            doc.activeChannels = doc.componentChannels;
+            return _json({ ok: true, canais: lista, w: doc.width.as("px"), h: doc.height.as("px"), dpi: doc.resolution });
         });
     } catch (e) { return _erro(e); }
 }

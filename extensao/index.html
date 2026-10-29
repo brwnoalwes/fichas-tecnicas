@@ -46,7 +46,9 @@ label.chk{display:flex;gap:6px;align-items:center}
 .tela i{width:12px;height:12px;border-radius:2px;border:1px solid #0008;flex:none}
 .tag{font-size:9.5px;padding:0 5px;border-radius:8px;background:#555;color:#ddd}
 .tag.degrade{background:#6a3d9a}
-.tela select.modo{margin-left:auto;font-size:11px;padding:1px 3px}.tag.traco{background:#111}.tag.base{background:#2b5b93}
+.tela select.modo{margin-left:auto;font-size:11px;padding:1px 3px}
+body:not(.modo-canais) .so-canais{display:none}
+body.modo-canais .so-auto{display:none!important}.tag.traco{background:#111}.tag.base{background:#2b5b93}
 .barra{height:4px;background:#2a2a2a;border-radius:2px;overflow:hidden}
 .barra i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
 </style>
@@ -54,11 +56,17 @@ label.chk{display:flex;gap:6px;align-items:center}
 <body>
 <div class="wrap">
   <div class="sec"><h3><span class="n">1</span>Arte</h3><div class="bd">
-    <button class="btn pri" id="btnLer">Ler a arte do documento ativo</button>
-    <div class="status" id="stArte">Abra a arte (camadas visíveis = o que será separado) e clique acima.</div>
+    <button class="btn pri" id="btnCanaisDoc">Usar os canais já separados (BBOXSTAMP / manual)</button>
+    <button class="btn" id="btnLer">Separar automaticamente a arte do documento</button>
+    <div class="status" id="stArte">Com a separação pronta no PSD, use o primeiro botão: a extensão lê os seus canais e faz prova, fotolitos e ficha.</div>
   </div></div>
 
-  <div class="sec"><h3><span class="n">2</span>Regiões e paleta</h3><div class="bd">
+  <div class="sec so-canais"><h3><span class="n">2</span>Canais do documento</h3><div class="bd">
+    <div class="hint">Na ordem do painel Canais (= ordem de impressão). O número “#NN” do nome é usado no fotolito. Canais com “Camiseta” no nome definem a cor da camiseta e não viram tela.</div>
+    <div class="row"><label class="f">Cor da camiseta<input type="color" id="camisetaCanais" value="#111111"></label></div>
+  </div></div>
+
+  <div class="sec so-auto"><h3><span class="n">2</span>Regiões e paleta</h3><div class="bd">
     <div class="hint">Selecione uma área no Photoshop (laço, varinha, intervalo de cores…) e adicione como região: ela ganha tintas próprias, mesmo com tons parecidos aos de outras áreas.</div>
     <div class="row"><input type="text" id="nomeRegiao" placeholder="Nome (ex.: Pele, Cabelo, Crânios)" style="flex:1"><button class="btn" id="btnRegiao">+ Região da seleção</button></div>
     <div class="status" id="stReg">Sem regiões: a arte inteira usa uma paleta só.</div>
@@ -67,7 +75,7 @@ label.chk{display:flex;gap:6px;align-items:center}
     <div class="cores" id="paleta"><div class="hint">Leia a arte primeiro.</div></div>
   </div></div>
 
-  <div class="sec"><h3><span class="n">3</span>Separação</h3><div class="bd">
+  <div class="sec so-auto"><h3><span class="n">3</span>Separação</h3><div class="bd">
     <div class="row"><label class="f">Cor da camiseta<input type="color" id="camiseta" value="#111111"></label>
       <label class="f">Passagem entre cores<select id="bordas"><option value="suaves">Degradê (vira retícula)</option><option value="auto">Seca entre tintas</option><option value="duras">Tudo seco</option></select></label></div>
     <label class="chk"><input type="checkbox" id="tracoOn" checked> Preto da camiseta dentro da arte vira traço por cima</label>
@@ -94,10 +102,12 @@ label.chk{display:flex;gap:6px;align-items:center}
   </div></div>
 
   <div class="sec"><h3><span class="n">5</span>Saída</h3><div class="bd">
+    <div class="so-auto" style="display:grid;gap:7px">
     <label class="chk"><input type="checkbox" id="camPrev" checked> Canal “Camiseta (previa)” para ver a prova no PSD</label>
     <label class="chk"><input type="checkbox" id="substituir" checked> Substituir canais criados antes por este painel</label>
     <button class="btn pri" id="btnCanais" disabled>Criar canais no PSD</button>
     <hr style="border:0;border-top:1px solid var(--line);width:100%;margin:2px 0">
+    </div>
     <div class="row"><label class="f">LPI<input type="number" id="lpi" value="45" min="15" max="85"></label>
       <label class="f">Ângulo<input type="number" id="ang" value="22.5" step="0.5"></label>
       <label class="f">dpi do fotolito<input type="number" id="dpiRet" value="900" step="100" min="300"></label></div>
