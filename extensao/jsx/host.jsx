@@ -40,8 +40,9 @@ function infoDoc() {
     try {
         if (!app.documents.length) return _json({ ok: false, erro: "Nenhum documento aberto." });
         return _comPixels(function () {
-            var d = app.activeDocument;
-            return _json({ ok: true, nome: d.name, w: d.width.as("px"), h: d.height.as("px"), dpi: d.resolution, pasta: _pasta(d), modo: String(d.mode) });
+            var d = app.activeDocument, caminho = null;
+            try { caminho = d.fullName.fsName; } catch (e) {}
+            return _json({ ok: true, nome: d.name, w: d.width.as("px"), h: d.height.as("px"), dpi: d.resolution, pasta: _pasta(d), modo: String(d.mode), caminho: caminho, salvo: d.saved });
         });
     } catch (e) { return _erro(e); }
 }
@@ -67,12 +68,15 @@ function exportarArte(s) {
     } catch (e) { return _erro(e); }
 }
 
-// copia o canal cinza de "origem" para o canal ativo do documento ativo (Imagem > Aplicar imagem)
-function _aplicarImagem(origem) {
+// copia o canal cinza de "origem" para o canal ativo do documento ativo (Imagem > Aplicar imagem).
+// Num canal de cor especial o Aplicar imagem trabalha invertido (branco = tinta): `inverter` compensa,
+// para o .raw (preto = tinta) aparecer certo no painel Canais.
+function _aplicarImagem(origem, inverter) {
     var d = new ActionDescriptor(), w = new ActionDescriptor(), r = new ActionReference();
     r.putEnumerated(charIDToTypeID("Chnl"), charIDToTypeID("Chnl"), charIDToTypeID("Gry "));
     r.putName(charIDToTypeID("Dcmn"), origem);
     w.putReference(charIDToTypeID("T   "), r);
+    if (inverter) w.putBoolean(charIDToTypeID("Invr"), true);
     w.putEnumerated(charIDToTypeID("Clcl"), charIDToTypeID("Clcn"), charIDToTypeID("Nrml"));
     d.putObject(charIDToTypeID("With"), charIDToTypeID("Clcl"), w);
     executeAction(charIDToTypeID("AppI"), d, DialogModes.NO);
@@ -106,7 +110,7 @@ function criarCanais(s) {
                 ch.color = _cor(c.lab);
                 ch.opacity = c.solidez || 100;
                 doc.activeChannels = [ch];
-                try { _aplicarImagem(nomeTmp); }
+                try { _aplicarImagem(nomeTmp, true); }
                 catch (e1) { // plano B: copiar e colar no canal
                     app.activeDocument = tmp; tmp.selection.selectAll(); tmp.selection.copy();
                     app.activeDocument = doc; doc.activeChannels = [ch]; doc.paste(); doc.selection.deselect();
@@ -225,8 +229,9 @@ function exportarSelecao(s) {
     } catch (e) { return _erro(e); }
 }
 
-// copia o canal `canal` do documento `doc` para um .raw cinza (preto = tinta, como no painel Canais)
-function _canalParaRaw(doc, canal, arquivo) {
+// copia o canal `canal` do documento `doc` para um .raw cinza (preto = tinta, como no painel Canais).
+// Aplicar imagem lê um canal de cor especial invertido (branco = tinta): `inverter` desfaz isso.
+function _canalParaRaw(doc, canal, arquivo, inverter) {
     var w = doc.width.as("px"), h = doc.height.as("px"), nomeDoc = doc.name;
     var tmp = app.documents.add(UnitValue(w, "px"), UnitValue(h, "px"), doc.resolution, "sep_canal", NewDocumentMode.GRAYSCALE, DocumentFill.WHITE);
     try {
@@ -234,6 +239,7 @@ function _canalParaRaw(doc, canal, arquivo) {
         r.putName(charIDToTypeID("Chnl"), canal);
         r.putName(charIDToTypeID("Dcmn"), nomeDoc);
         wd.putReference(charIDToTypeID("T   "), r);
+        if (inverter) wd.putBoolean(charIDToTypeID("Invr"), true);
         wd.putEnumerated(charIDToTypeID("Clcl"), charIDToTypeID("Clcn"), charIDToTypeID("Nrml"));
         d.putObject(charIDToTypeID("With"), charIDToTypeID("Clcl"), wd);
         executeAction(charIDToTypeID("AppI"), d, DialogModes.NO);
@@ -255,10 +261,12 @@ function exportarCanais(s) {
     try {
         var a = _ler(s);
         return _comPixels(function () {
-            var doc = app.activeDocument, origem = [], lista = [], k, ch;
+            var doc = app.activeDocument, origem = [], lista = [], k, ch, temSpot = false;
+            for (k = 0; k < doc.channels.length; k++) if (doc.channels[k].kind == ChannelType.SPOTCOLOR) temSpot = true;
+            // com canais de cor especial, os alfas (seleções guardadas) nem são copiados
             for (k = 0; k < doc.channels.length; k++) {
                 ch = doc.channels[k];
-                if (ch.kind != ChannelType.COMPONENT && ch.name.indexOf("sep_") != 0) origem.push(ch);
+                if (ch.kind != ChannelType.COMPONENT && ch.name.indexOf("sep_") != 0 && (!temSpot || ch.kind == ChannelType.SPOTCOLOR)) origem.push(ch);
             }
             if (!origem.length) return _json({ ok: false, erro: "Este documento nao tem canais de cor especial nem alfa. Separe primeiro (BBOXSTAMP ou manual) e tente de novo." });
             for (k = 0; k < origem.length; k++) {
@@ -267,7 +275,7 @@ function exportarCanais(s) {
                 if (ch.kind == ChannelType.SPOTCOLOR) {
                     try { info.hex = "#" + ch.color.rgb.hexValue; info.lab = [ch.color.lab.l, ch.color.lab.a, ch.color.lab.b]; info.solidez = ch.opacity; } catch (e) {}
                 }
-                info.raw = _canalParaRaw(doc, ch.name, a.pasta + "/canal" + (k < 10 ? "0" : "") + k + ".raw");
+                if (!/camiseta/i.test(ch.name)) info.raw = _canalParaRaw(doc, ch.name, a.pasta + "/canal" + (k < 10 ? "0" : "") + k + ".raw", ch.kind == ChannelType.SPOTCOLOR);
                 lista.push(info);
             }
             doc.activeChannels = doc.componentChannels;

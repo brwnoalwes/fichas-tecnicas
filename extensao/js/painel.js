@@ -56,12 +56,27 @@ $("#btnCanaisDoc").onclick = async () => {
   try {
     if (!CEP) throw new Error("Disponível só dentro do Photoshop.");
     if (!fs.existsSync(TMP)) fs.mkdirSync(TMP);
-    status("#stArte", "Lendo a arte e os canais do documento…");
-    const arte = await host("exportarArte", { pasta: TMP });
-    st.doc = { nome: arte.nome, pasta: arte.pasta }; st.dpi = arte.dpi;
-    await carregarImagem(urlArquivo(arte.png), true);
-    const r = await host("exportarCanais", { pasta: TMP });
-    usarCanais(r.canais);
+    const inf = await host("infoDoc");
+    st.doc = { nome: inf.nome, pasta: inf.pasta };
+    // rápido: lê os canais direto do PSD salvo (segundos). Sem arquivo salvo: copia canal por canal no Photoshop (lento)
+    if (inf.caminho && /\.ps[db]$/i.test(inf.caminho) && inf.salvo) {
+      const n2 = i => (i < 10 ? "0" : "") + i;
+      const r = await window.lerPSD(fs, Buf, inf.caminho,
+        (e, nome, tipo) => tipo === "spot" && !/camiseta/i.test(nome) ? path.join(TMP, "canal" + n2(e) + ".raw") : null,
+        async txt => { status("#stArte", txt); await espera(); });
+      st.dpi = r.dpi;
+      aplicarArte(r.W, r.H, (cv, w, h) => {
+        const g = cv.getContext("2d"); g.putImageData(new ImageData(r.rgba, r.W, r.H), 0, 0);
+      }, true);
+      usarCanais(r.canais);
+    } else {
+      status("#stArte", inf.caminho ? "PSD com alterações não salvas: lendo canal por canal no Photoshop (lento). Salve (Ctrl+S) para ser rápido." : "Documento nunca salvo: lendo canal por canal no Photoshop (lento).");
+      const arte = await host("exportarArte", { pasta: TMP });
+      st.dpi = arte.dpi;
+      await carregarImagem(urlArquivo(arte.png), true);
+      const r = await host("exportarCanais", { pasta: TMP });
+      usarCanais(r.canais);
+    }
   } catch (e) { status("#stArte", e.message, "erro"); }
 };
 // número "#NN" que já vem no nome do canal (ex.: "ok #03 Amarelo 1") e o nome sem ele
@@ -88,14 +103,18 @@ function usarCanais(listaToda) {
   let ordem = 0;
   for (const c of lista) {
     if (/camiseta/i.test(c.nome)) { if (c.hex) $("#camisetaCanais").value = c.hex; continue; }
+    if (!c.raw || /^(alfa|alpha)\s*\d*$/i.test(c.nome.trim()) || /transpar/i.test(c.nome)) continue;
     const buf = fs.readFileSync(c.raw);
-    // preto = tinta (cor especial). Canal alfa "área mascarada" usa branco = tinta; canal quase todo tinta está invertido
-    let soma = 0, n = 0;
-    for (let q = 0; q < buf.length; q += 97) { soma += buf[q]; n++; }
-    const cob = 1 - soma / (n * 255);
-    let inv = c.tipo === "mascara";
-    if ((inv ? 1 - cob : cob) > 0.85) inv = !inv;
-    if (inv) { for (let q = 0; q < buf.length; q++) buf[q] = 255 - buf[q]; fs.writeFileSync(c.raw, buf); }
+    // cor especial chega com preto = tinta (lida do arquivo, ou já desinvertida no Photoshop).
+    // Só canal alfa (sem cor especial no documento) pode vir ao contrário: aí vale a cobertura
+    if (c.tipo !== "spot") {
+      let soma = 0, n = 0;
+      for (let q = 0; q < buf.length; q += 97) { soma += buf[q]; n++; }
+      const cob = 1 - soma / (n * 255);
+      let inv = c.tipo === "mascara";
+      if ((inv ? 1 - cob : cob) > 0.85) inv = !inv;
+      if (inv) { for (let q = 0; q < buf.length; q++) buf[q] = 255 - buf[q]; fs.writeFileSync(c.raw, buf); }
+    }
     const canal = reduzirMascara(buf, st.W, st.H, p.w, p.h).map(v => 255 - v);
     if (M.cobertura(canal) < 0.00005) continue;
     const hex = c.hex || "#888888", nn = numeroDoCanal(c.nome, ++ordem);
@@ -109,21 +128,24 @@ function usarCanais(listaToda) {
   status("#stArte", `${st.doc.nome}: ${telas.length} canais lidos, na ordem do painel Canais` + (ign ? ` (${ign} canais alfa ignorados)` : "") + ".", "ok");
   separarAgora();
 }
+// monta a arte em resolução cheia (desenhar(canvas, W, H)) e a prévia reduzida
+function aplicarArte(W, H, desenhar, semPaleta) {
+  const full = document.createElement("canvas"); full.width = W; full.height = H;
+  desenhar(full, W, H);
+  const k = Math.min(1, PREV_MAX / Math.max(W, H)), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const g = cv.getContext("2d"); g.drawImage(full, 0, 0, w, h);
+  Object.assign(st, { full, W, H, prev: { w, h, k, cv, px: g.getImageData(0, 0, w, h).data }, raws: null, modos: {}, regioes: [novaRegiao("Resto da arte", null, null)] });
+  const cm = v => fmt(v / st.dpi * 2.54);
+  status("#stArte", `${st.doc.nome} · ${W} × ${H} px · ${cm(W)} × ${cm(H)} cm a ${Math.round(st.dpi)} dpi`, "ok");
+  $("#cvOrig").width = w; $("#cvOrig").height = h; $("#cvOrig").getContext("2d").drawImage(cv, 0, 0);
+  if (!semPaleta) calcPaleta();
+}
 function carregarImagem(src, semPaleta) {
   return new Promise((res, rej) => {
     const im = new Image();
     im.onload = () => {
-      const W = im.naturalWidth, H = im.naturalHeight;
-      const full = document.createElement("canvas"); full.width = W; full.height = H;
-      full.getContext("2d").drawImage(im, 0, 0);
-      const k = Math.min(1, PREV_MAX / Math.max(W, H)), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
-      const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-      const g = cv.getContext("2d"); g.drawImage(im, 0, 0, w, h);
-      Object.assign(st, { full, W, H, prev: { w, h, k, cv, px: g.getImageData(0, 0, w, h).data }, raws: null, modos: {}, regioes: [novaRegiao("Resto da arte", null, null)] });
-      const cm = v => fmt(v / st.dpi * 2.54);
-      status("#stArte", `${st.doc.nome} · ${W} × ${H} px · ${cm(W)} × ${cm(H)} cm a ${Math.round(st.dpi)} dpi`, "ok");
-      $("#cvOrig").width = w; $("#cvOrig").height = h; $("#cvOrig").getContext("2d").drawImage(cv, 0, 0);
-      if (!semPaleta) calcPaleta();
+      aplicarArte(im.naturalWidth, im.naturalHeight, cv => cv.getContext("2d").drawImage(im, 0, 0), semPaleta);
       res();
     };
     im.onerror = () => rej(new Error("Não consegui abrir a imagem exportada."));
