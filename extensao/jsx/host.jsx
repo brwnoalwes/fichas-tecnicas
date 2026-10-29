@@ -191,13 +191,14 @@ function exportarSelecao(s) {
         return _comPixels(function () {
             var doc = app.activeDocument;
             try { doc.selection.bounds; } catch (e0) { return _json({ ok: false, erro: "Nada selecionado. Selecione a regiao (laco, varinha, intervalo de cores...) e tente de novo." }); }
-            var w = doc.width.as("px"), h = doc.height.as("px");
-            var ch = doc.channels.add(); ch.name = "sep_regiao_tmp";
-            doc.selection.store(ch, SelectionType.REPLACE);
-            doc.activeChannels = doc.componentChannels;
-            var nomeDoc = doc.name;
-            var tmp = app.documents.add(UnitValue(w, "px"), UnitValue(h, "px"), doc.resolution, "sep_regiao", NewDocumentMode.GRAYSCALE, DocumentFill.BLACK);
+            var w = doc.width.as("px"), h = doc.height.as("px"), nomeDoc = doc.name;
+            var f = new File(a.arquivo), ch = null, tmp = null;
+            // aconteça o que acontecer, não deixa documento auxiliar aberto nem canal temporário na arte
             try {
+                ch = doc.channels.add(); ch.name = "sep_regiao_tmp";
+                doc.selection.store(ch, SelectionType.REPLACE);
+                doc.activeChannels = doc.componentChannels;
+                tmp = app.documents.add(UnitValue(w, "px"), UnitValue(h, "px"), doc.resolution, "sep_regiao", NewDocumentMode.GRAYSCALE, DocumentFill.WHITE);
                 // copia o canal temporário do documento da arte para o cinza deste documento
                 var d = new ActionDescriptor(), wd = new ActionDescriptor(), r = new ActionReference();
                 r.putName(charIDToTypeID("Chnl"), "sep_regiao_tmp");
@@ -207,12 +208,15 @@ function exportarSelecao(s) {
                 d.putObject(charIDToTypeID("With"), charIDToTypeID("Clcl"), wd);
                 executeAction(charIDToTypeID("AppI"), d, DialogModes.NO);
                 var o = new RawSaveOptions(); o.alphaChannels = false; o.spotColors = false;
-                var f = new File(a.arquivo);
                 tmp.saveAs(f, o, true, Extension.LOWERCASE);
-            } finally { tmp.close(SaveOptions.DONOTSAVECHANGES); }
-            app.activeDocument = doc;
-            ch.remove();
-            doc.activeChannels = doc.componentChannels;
+            } finally {
+                if (tmp) { try { tmp.close(SaveOptions.DONOTSAVECHANGES); } catch (e1) {} }
+                for (var i = app.documents.length - 1; i >= 0; i--) if (app.documents[i].name.indexOf("sep_regiao") == 0) { try { app.documents[i].close(SaveOptions.DONOTSAVECHANGES); } catch (e2) {} }
+                app.activeDocument = doc;
+                if (ch) { try { ch.remove(); } catch (e3) {} }
+                for (var j = doc.channels.length - 1; j >= 0; j--) if (doc.channels[j].name == "sep_regiao_tmp") { try { doc.channels[j].remove(); } catch (e4) {} }
+                doc.activeChannels = doc.componentChannels;
+            }
             return _json({ ok: true, raw: f.fsName, w: w, h: h });
         });
     } catch (e) { return _erro(e); }
