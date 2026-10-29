@@ -208,7 +208,8 @@ function separarAgora() {
   telas.forEach(t => {
     const ret = modo === "todas" || (modo === "degrade" && t.tom === "degrade");
     t.reticulada = ret;
-    t.tinta = ret ? M.reticular(t.canal, w, h, { dpi, lpi, angulo: ang }) : t.canal;
+    // fotolito é sempre preto e branco: degradê reticulado, chapado no limiar de 50%
+    t.tinta = ret ? M.reticular(t.canal, w, h, { dpi, lpi, angulo: ang }) : modo === "nenhuma" ? t.canal : M.limiar(t.canal);
   });
   const prova = M.simular(telas.map(t => ({ canal: t.tinta, hex: t.hex })), w, h, camHex);
   // fotolitos: base e traço sempre em tela própria

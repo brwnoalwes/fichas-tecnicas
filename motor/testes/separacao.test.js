@@ -194,6 +194,10 @@ test("limpar: some a meia-tinta fraca, fica a borda forte", () => {
   assert.deepEqual([...M.limpar(c, 0)], [...c]);
 });
 
+test("limiar: fotolito chapado sai só preto ou branco", () => {
+  assert.deepEqual([...M.limiar(new Uint8Array([0, 60, 127, 128, 200, 255]))], [0, 0, 0, 255, 255, 255]);
+});
+
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {
   const w = 2, h = 1, cheio = new Uint8Array([255, 0]);
   const out = M.simular([{ canal: cheio, hex: "#ffffff" }, { canal: cheio, hex: "#d21e28" }], w, h, "#111111");

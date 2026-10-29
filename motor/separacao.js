@@ -256,6 +256,12 @@
     if (lim > 0) for (let i = 0; i < out.length; i++) if (out[i] < lim) out[i] = 0;
     return out;
   }
+  /** Fotolito de tela chapada: só preto ou branco, cortando em `corte` (0–1; padrão 50%). */
+  function limiar(c, corte) {
+    const lim = Math.round(def(corte, 0.5) * 255), out = new Uint8Array(c.length);
+    for (let i = 0; i < c.length; i++) out[i] = c[i] >= lim ? 255 : 0;
+    return out;
+  }
   /** "degrade" quando mais de 20% dos pixels com tinta são meio-tom (precisa de retícula). */
   function tipoTom(c) {
     let tinta = 0, meio = 0;
@@ -403,5 +409,5 @@
 
   const cobertura = c => { let s = 0; for (let i = 0; i < c.length; i++) s += c[i]; return s / 255 / c.length; };
 
-  return { paleta, separar, pipeline, sobra, limpar, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
+  return { paleta, separar, pipeline, sobra, limpar, limiar, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
 });

@@ -132,7 +132,7 @@ function _marca(doc, x, y, t) {
 
 /**
  * Gera um PDF por fotolito.
- * a = {w, h, dpi, saida, margemCm, espelhar, fotolitos:[{arquivo, titulo, raw, reticula:{lpi, angulo, dpi}|null}]}
+ * a = {w, h, dpi, saida, margemCm, espelhar, fotolitos:[{arquivo, titulo, raw, dpi, reticula:{lpi, angulo}|null}]}
  */
 function gerarFotolitos(s) {
     try {
@@ -154,13 +154,19 @@ function gerarFotolitos(s) {
                         ti.contents = f.titulo; ti.size = 11; ti.color = _preto();
                         ti.position = [UnitValue(m + t, "px"), UnitValue(Math.round(m * 0.62), "px")];
                         d.flatten();
+                        // fotolito sempre 1 bit (só preto ou branco): cinza no filme grava falhado.
+                        // Degradê: retícula de meio-tom. Chapado: limiar 50% (a borda suave vira borda
+                        // nítida, posicionada na resolução de saída, que é maior que a do documento).
+                        var o = new BitmapConversionOptions();
+                        o.resolution = f.dpi;
                         if (f.reticula) {
-                            var o = new BitmapConversionOptions();
                             o.method = BitmapConversionType.HALFTONESCREEN;
-                            o.resolution = f.reticula.dpi; o.frequency = f.reticula.lpi; o.angle = f.reticula.angulo;
+                            o.frequency = f.reticula.lpi; o.angle = f.reticula.angulo;
                             o.shape = BitmapHalfToneType.ROUND;
-                            d.changeMode(ChangeMode.BITMAP, o);
+                        } else {
+                            o.method = BitmapConversionType.HALFTHRESHOLD;
                         }
+                        d.changeMode(ChangeMode.BITMAP, o);
                         if (a.espelhar) d.flipCanvas(Direction.HORIZONTAL);
                         var p = new PDFSaveOptions(); p.layers = false; p.preserveEditing = false;
                         var arq = new File(pasta.fsName + "/" + f.arquivo);

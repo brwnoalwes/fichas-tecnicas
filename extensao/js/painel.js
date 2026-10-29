@@ -219,8 +219,8 @@ $("#btnFotos").onclick = () => tarefa("#btnFotos", async () => {
     const degrade = ts.length === 1 && ts[0].tom === "degrade";
     return {
       arquivo: (nums + " " + nomes).replace(/[\\/:*?"<>|]/g, "-") + ".pdf",
-      titulo: nums + "  " + nomes + "   |   " + nomeBase() + (degrade ? "   |   retícula " + $("#lpi").value + " lpi " + $("#ang").value + "°" : ""),
-      raw, reticula: degrade ? { lpi: +$("#lpi").value, angulo: +$("#ang").value, dpi: +$("#dpiRet").value } : null,
+      titulo: nums + "  " + nomes + "   |   " + nomeBase() + "   |   " + (degrade ? "retícula " + $("#lpi").value + " lpi " + $("#ang").value + "°" : "chapado") + " · " + $("#dpiRet").value + " dpi",
+      raw, dpi: +$("#dpiRet").value, reticula: degrade ? { lpi: +$("#lpi").value, angulo: +$("#ang").value } : null,
     };
   });
   const saida = path.join(st.doc.pasta, "Fotolitos - " + nomeBase());

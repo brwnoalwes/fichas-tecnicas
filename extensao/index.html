@@ -83,7 +83,7 @@ label.chk{display:flex;gap:6px;align-items:center}
     <hr style="border:0;border-top:1px solid var(--line);width:100%;margin:2px 0">
     <div class="row"><label class="f">LPI<input type="number" id="lpi" value="45" min="15" max="85"></label>
       <label class="f">Ângulo<input type="number" id="ang" value="22.5" step="0.5"></label>
-      <label class="f">dpi retícula<input type="number" id="dpiRet" value="900" step="100"></label></div>
+      <label class="f">dpi do fotolito<input type="number" id="dpiRet" value="900" step="100" min="300"></label></div>
     <div class="row"><label class="f">Margem (cm)<input type="number" id="margemCm" value="2" step="0.5" min="1"></label>
       <label class="f">Folga p/ juntar (cm)<input type="number" id="folga" value="0.5" step="0.1" min="0"></label></div>
     <label class="chk"><input type="checkbox" id="juntar" checked> Juntar no mesmo fotolito cores que não se tocam</label>
@@ -93,7 +93,7 @@ label.chk{display:flex;gap:6px;align-items:center}
     <div class="barra"><i id="barra"></i></div>
     <div class="status" id="stSaida">—</div>
   </div></div>
-  <div class="hint" style="text-align:center">Só degradês recebem retícula; telas chapadas saem na resolução do documento.</div>
+  <div class="hint" style="text-align:center">Todo fotolito sai só em preto e branco (1 bit): degradês com retícula, chapados com limiar 50%.</div>
 </div>
 <script src="js/motor.js"></script>
 <script src="js/painel.js"></script>
