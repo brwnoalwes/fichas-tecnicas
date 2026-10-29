@@ -13,7 +13,7 @@ const fmt = n => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const espera = () => new Promise(r => setTimeout(r, 0));
 
-const st = { doc: null, full: null, W: 0, H: 0, dpi: 300, prev: null, pal: null, papeis: [], base: [], nomes: [], plano: null, grupos: null, sep: null, assin: "", raws: null };
+const st = { doc: null, full: null, W: 0, H: 0, dpi: 300, prev: null, pal: null, papeis: [], base: [], nomes: [], plano: null, grupos: null, sep: null, assin: "", raws: null, degradeIdx: new Set() };
 
 /* ---------- Photoshop ---------- */
 function host(fn, arg) {
@@ -116,15 +116,25 @@ function opcoes(dpi) {
     idx, cores: idx.map(i => st.pal.cores[i]), papeis: idx.map(i => st.papeis[i]),
     camiseta: M.rgb2lab.apply(null, M.hex2rgb($("#camiseta").value)), bordas: $("#bordas").value,
     tracoCamiseta: $("#tracoOn").checked, alcancePx: mm(+$("#alcance").value), trapPx: mm(+$("#trapMm").value),
-    baseOn: $("#baseOn").checked, base: idx.map(i => st.base[i]), chokePx: mm(+$("#choke").value),
+    // cor em degradê (glow) não leva base: a base é chapada e o degradê viraria cinza no fotolito
+    baseOn: $("#baseOn").checked, base: idx.map(i => st.base[i] && !st.degradeIdx.has(i)), chokePx: mm(+$("#choke").value),
   };
 }
 let timer;
 function separar() { clearTimeout(timer); timer = setTimeout(separarAgora, 120); }
 function separarAgora() {
   if (!st.pal) return;
-  const p = st.prev, dpiPrev = st.dpi * p.k, o = opcoes(dpiPrev), camHex = $("#camiseta").value;
-  const sep = M.pipeline(p.px, p.w, p.h, o);
+  const p = st.prev, dpiPrev = st.dpi * p.k, camHex = $("#camiseta").value;
+  // 1º separa sem base para saber quais cores são degradê; depois monta a base só com as chapadas
+  const sep = M.pipeline(p.px, p.w, p.h, Object.assign(opcoes(dpiPrev), { baseOn: false }));
+  st.degradeIdx = new Set();
+  const o = opcoes(dpiPrev);
+  sep.canais.forEach((c, k) => { if (o.papeis[k] === "imprimir" && M.tipoTom(c) === "degrade") st.degradeIdx.add(o.idx[k]); });
+  const o2 = opcoes(dpiPrev); Object.assign(o, { base: o2.base });
+  if (o.baseOn) {
+    const usar = o.idx.map((_, k) => k).filter(k => o.papeis[k] === "imprimir" && o.base[k]);
+    if (usar.length) sep.base = M.baseBranca(usar.map(k => sep.canais[k]), p.w, p.h, { choke: o.chokePx });
+  }
   const kTraco = o.papeis.indexOf("traco");
   let plano = sep.canais.map((c, k) => ({ tipo: "cor", k, nome: st.nomes[o.idx[k]], hex: o.cores[k].hex, lab: o.cores[k].lab, tom: M.tipoTom(c), canal: c }))
     .filter(t => o.papeis[t.k] === "imprimir" && M.cobertura(t.canal) > 0.00005);
@@ -133,11 +143,13 @@ function separarAgora() {
   plano = M.ordenar(plano).map(i => plano[i]);
   if (sep.base) plano.unshift({ tipo: "base", nome: "Base branca", hex: "#ffffff", lab: [100, 0, 0], tom: "chapado", canal: sep.base, base: true });
   plano.forEach((t, n) => { t.num = "#" + String(n + 1).padStart(2, "0"); });
+  const lim = limiteLimpeza();
+  plano.forEach(t => { if (t.tom !== "degrade") t.canal = M.limpar(t.canal, lim); });
   const fixos = plano.map((t, i) => t.tipo !== "cor" || t.tom === "degrade" ? i : -1).filter(i => i >= 0);
   st.grupos = $("#juntar").checked ? M.agrupar(plano.map(t => t.canal), p.w, p.h, { margem: +$("#folga").value / 2.54 * dpiPrev, fixos }) : plano.map((_, i) => [i]);
   st.grupos.sort((a, b) => a[0] - b[0]);
   st.plano = plano; st.sep = sep;
-  st.assin = JSON.stringify([o.cores.map(c => c.hex), o.papeis, o.base, o.bordas, o.tracoCamiseta, $("#alcance").value, $("#trapMm").value, o.baseOn, $("#choke").value, $("#camiseta").value]);
+  st.assin = JSON.stringify([o.cores.map(c => c.hex), o.papeis, o.base, o.bordas, o.tracoCamiseta, $("#alcance").value, $("#trapMm").value, o.baseOn, $("#choke").value, $("#camiseta").value, lim]);
 
   const prova = M.simular(plano.map(t => ({ canal: t.canal, hex: t.hex })), p.w, p.h, camHex);
   const cv = $("#cvProva"); cv.width = p.w; cv.height = p.h; cv.getContext("2d").putImageData(new ImageData(prova, p.w, p.h), 0, 0);
@@ -153,7 +165,7 @@ function separarAgora() {
 // separa a imagem inteira em faixas e grava um .raw por tela (8 bits, preto = tinta)
 async function processarCheio() {
   if (st.raws && st.raws.assin === st.assin) return st.raws;
-  const W = st.W, H = st.H, o = opcoes(st.dpi), s = M.sobra(o), plano = st.plano;
+  const W = st.W, H = st.H, o = opcoes(st.dpi), s = M.sobra(o), plano = st.plano, lim = limiteLimpeza();
   const g = st.full.getContext("2d");
   const arqs = plano.map(t => path.join(TMP, "tela" + t.num.slice(1) + ".raw"));
   const fds = arqs.map(a => fs.openSync(a, "w"));
@@ -164,8 +176,9 @@ async function processarCheio() {
       const de = (y0 - a) * W, n = Math.min(FAIXA, H - y0) * W;
       plano.forEach((t, i) => {
         const c = t.tipo === "base" ? r.base : t.tipo === "traco" ? r.traco : r.canais[t.k];
+        const corte = t.tom !== "degrade" ? Math.round(lim * 255) : 0;
         const out = Buf.alloc(n, 255);
-        if (c) for (let q = 0; q < n; q++) out[q] = 255 - c[de + q];
+        if (c) for (let q = 0; q < n; q++) { const v = c[de + q]; out[q] = v < corte ? 255 : 255 - v; }
         fs.writeSync(fds[i], out);
       });
       barra((y0 + FAIXA) / H);
@@ -239,6 +252,8 @@ $("#btnFicha").onclick = () => tarefa("#btnFicha", async () => {
   }
 });
 
+const limiteLimpeza = () => +$("#limpeza").value / 100;
+
 async function tarefa(id, fn) {
   const b = $(id); b.disabled = true; barra(0);
   try { await fn(); } catch (e) { status("#stSaida", e.message, "erro"); }
@@ -246,13 +261,13 @@ async function tarefa(id, fn) {
 }
 
 /* ---------- controles e preferências ---------- */
-const SAIDAS = [["maxCores", "oMax", v => v, true], ["mesclar", "oMes", v => v, true], ["alcance", "oAlc", v => fmt(+v) + " mm"], ["trapMm", "oTrap", v => fmt(+v) + " mm"], ["choke", "oChoke", v => fmt(+v) + " mm"]];
+const SAIDAS = [["maxCores", "oMax", v => v, true], ["mesclar", "oMes", v => v, true], ["alcance", "oAlc", v => fmt(+v) + " mm"], ["trapMm", "oTrap", v => fmt(+v) + " mm"], ["choke", "oChoke", v => fmt(+v) + " mm"], ["limpeza", "oLimp", v => v + "%"]];
 SAIDAS.forEach(x => {
   const el = $("#" + x[0]); $("#" + x[1]).textContent = x[2](el.value);
   el.addEventListener("input", () => { $("#" + x[1]).textContent = x[2](el.value); x[3] ? calcPaleta() : separar(); });
 });
 ["camiseta", "bordas", "tracoOn", "baseOn", "juntar", "folga"].forEach(id => $("#" + id).addEventListener("input", separar));
-const PREF = ["maxCores", "mesclar", "bordas", "tracoOn", "alcance", "trapMm", "baseOn", "choke", "camPrev", "substituir", "lpi", "ang", "dpiRet", "margemCm", "folga", "juntar", "espelhar"];
+const PREF = ["maxCores", "mesclar", "bordas", "tracoOn", "alcance", "trapMm", "baseOn", "choke", "limpeza", "camPrev", "substituir", "lpi", "ang", "dpiRet", "margemCm", "folga", "juntar", "espelhar"];
 function salvarPreferencias() {
   try { localStorage.setItem("estamparia-separacao", JSON.stringify(PREF.reduce((o, id) => { const el = $("#" + id); o[id] = el.type === "checkbox" ? el.checked : el.value; return o; }, {}))); } catch (e) { /* sem armazenamento */ }
 }

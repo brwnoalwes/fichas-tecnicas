@@ -188,6 +188,12 @@ test("pipeline em faixas dá o mesmo resultado que a imagem inteira", () => {
   assert.deepEqual(junta.base, inteiro.base);
 });
 
+test("limpar: some a meia-tinta fraca, fica a borda forte", () => {
+  const c = new Uint8Array([0, 20, 60, 128, 255]);
+  assert.deepEqual([...M.limpar(c, 0.3)], [0, 0, 0, 128, 255]);
+  assert.deepEqual([...M.limpar(c, 0)], [...c]);
+});
+
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {
   const w = 2, h = 1, cheio = new Uint8Array([255, 0]);
   const out = M.simular([{ canal: cheio, hex: "#ffffff" }, { canal: cheio, hex: "#d21e28" }], w, h, "#111111");

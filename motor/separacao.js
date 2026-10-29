@@ -246,6 +246,16 @@
       return out;
     });
   }
+  /**
+   * Tela chapada não tem retícula: meia-tinta fraca (resto de glow/esfumado ao redor) sai como
+   * cinza no fotolito e vira ruído na tela gravada. Abaixo de `limite` (0–1) vira zero; a borda
+   * suavizada, mais forte, fica.
+   */
+  function limpar(c, limite) {
+    const lim = Math.round(limite * 255), out = c.slice();
+    if (lim > 0) for (let i = 0; i < out.length; i++) if (out[i] < lim) out[i] = 0;
+    return out;
+  }
   /** "degrade" quando mais de 20% dos pixels com tinta são meio-tom (precisa de retícula). */
   function tipoTom(c) {
     let tinta = 0, meio = 0;
@@ -393,5 +403,5 @@
 
   const cobertura = c => { let s = 0; for (let i = 0; i < c.length; i++) s += c[i]; return s / 255 / c.length; };
 
-  return { paleta, separar, pipeline, sobra, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
+  return { paleta, separar, pipeline, sobra, limpar, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
 });

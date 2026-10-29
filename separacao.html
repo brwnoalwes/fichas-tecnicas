@@ -82,6 +82,8 @@ h2 small{font-weight:400;color:var(--muted);font-size:12.5px}
       <label class="f">Trap: cores avançam por baixo do traço<div class="row"><input type="range" id="trapMm" min="0" max="1.5" step="0.05" value="0.3"><output id="oTrap">0,3 mm</output></div></label>
       <label class="chk"><input type="checkbox" id="baseOn" checked> Base branca</label>
       <label class="f">Retração da base (choke)<div class="row"><input type="range" id="choke" min="0" max="1.5" step="0.05" value="0.2"><output id="oChoke">0,2 mm</output></div></label>
+      <div class="hint">Cores em degradê (glow) não levam base.</div>
+      <label class="f">Limpar meia-tinta fraca nas telas chapadas<div class="row"><input type="range" id="limpeza" min="0" max="60" step="5" value="30"><output id="oLimp">30%</output></div></label>
     </div></div>
     <div class="card"><h3>Retícula (prévia)</h3><div class="bd">
       <label class="f">Reticular<select id="retModo"><option value="degrade">Só as telas em degradê (glow, sombras suaves)</option><option value="todas">Todas as telas</option><option value="nenhuma">Nenhuma</option></select></label>
@@ -183,11 +185,16 @@ function separarAgora() {
   const idx = st.pal.cores.map((_, i) => i).filter(i => st.papeis[i] !== "camiseta");
   const cores = idx.map(i => st.pal.cores[i]);
   const camHex = $("#camiseta").value, camLab = M.rgb2lab(...M.hex2rgb(camHex));
+  const papeis = idx.map(i => st.papeis[i]);
   const sep = M.pipeline(px, w, h, {
-    cores, papeis: idx.map(i => st.papeis[i]), camiseta: camLab, bordas: $("#bordas").value,
-    tracoCamiseta: $("#tracoOn").checked, alcancePx: mm(+$("#alcance").value), trapPx: mm(+$("#trapMm").value),
-    baseOn: $("#baseOn").checked, base: idx.map(i => st.base[i]), chokePx: mm(+$("#choke").value),
+    cores, papeis, camiseta: camLab, bordas: $("#bordas").value,
+    tracoCamiseta: $("#tracoOn").checked, alcancePx: mm(+$("#alcance").value), trapPx: mm(+$("#trapMm").value), baseOn: false,
   });
+  // base só sob as cores chapadas: o degradê (glow) viraria cinza num fotolito de base sem retícula
+  if ($("#baseOn").checked) {
+    const usar = idx.map((_, k) => k).filter(k => papeis[k] === "imprimir" && st.base[idx[k]] && M.tipoTom(sep.canais[k]) !== "degrade");
+    if (usar.length) sep.base = M.baseBranca(usar.map(k => sep.canais[k]), w, h, { choke: mm(+$("#choke").value) });
+  }
   const kTraco = idx.findIndex(i => st.papeis[i] === "traco");
   const tracoHex = kTraco >= 0 ? cores[kTraco].hex : camHex, tracoLab = kTraco >= 0 ? cores[kTraco].lab : camLab;
   let telas = sep.canais.map((c, k) => ({ canal: c, hex: cores[k].hex, lab: cores[k].lab, nome: st.nomes[idx[k]], tom: M.tipoTom(c), i: idx[k] }))
@@ -196,6 +203,7 @@ function separarAgora() {
   telas = M.ordenar(telas).map(i => telas[i]);
   if (sep.base) telas.unshift({ canal: sep.base, hex: "#ffffff", lab: [100, 0, 0], nome: "Base branca", tom: "chapado", base: true });
   telas.forEach((t, n) => t.num = "#" + String(n + 1).padStart(2, "0"));
+  telas.forEach(t => { if (t.tom !== "degrade") t.canal = M.limpar(t.canal, +$("#limpeza").value / 100); });
   const modo = $("#retModo").value, lpi = +$("#lpi").value, ang = +$("#ang").value;
   telas.forEach(t => {
     const ret = modo === "todas" || (modo === "degrade" && t.tom === "degrade");
@@ -240,7 +248,7 @@ function separarAgora() {
 function pintar(cv, rgba) { cv.width = st.w; cv.height = st.h; cv.getContext("2d").putImageData(new ImageData(rgba, st.w, st.h), 0, 0); }
 
 [["maxCores", "oMax", v => v, 1], ["mesclar", "oMes", v => v, 1], ["alcance", "oAlc", v => fmt(+v) + " mm"], ["trapMm", "oTrap", v => fmt(+v) + " mm"],
- ["choke", "oChoke", v => fmt(+v) + " mm"], ["lpi", "oLpi", v => v], ["ang", "oAng", v => fmt(+v) + "°"], ["margem", "oMar", v => fmt(+v) + " cm"], ["maxTela", "oMaxT", v => v]]
+ ["choke", "oChoke", v => fmt(+v) + " mm"], ["limpeza", "oLimp", v => v + "%"], ["lpi", "oLpi", v => v], ["ang", "oAng", v => fmt(+v) + "°"], ["margem", "oMar", v => fmt(+v) + " cm"], ["maxTela", "oMaxT", v => v]]
   .forEach(([id, o, f, pal]) => { $("#" + id).addEventListener("input", e => { $("#" + o).textContent = f(e.target.value); pal ? calcPaleta() : separar(); }); });
 ["camiseta", "bordas", "tracoOn", "baseOn", "retModo", "juntar", "largCm"].forEach(id => $("#" + id).addEventListener("input", separar));
 
