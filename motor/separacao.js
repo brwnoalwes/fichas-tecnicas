@@ -453,6 +453,91 @@
     return out;
   }
 
+  /* ---------- marcas automáticas do gabarito ---------- */
+  // manchas (vizinhança 8) de uma máscara: caixa de cada uma
+  function caixasDeManchas(m, w, h) {
+    const N = w * h, visto = new Uint8Array(N), fila = new Int32Array(N), caixas = [];
+    for (let s = 0; s < N; s++) {
+      if (visto[s] || !m[s]) continue;
+      let ini = 0, fim = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
+      fila[fim++] = s; visto[s] = 1;
+      while (ini < fim) {
+        const i = fila[ini++], x = i % w, y = (i - x) / w;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        for (let dy = -1; dy <= 1; dy++) {
+          const yy = y + dy; if (yy < 0 || yy >= h) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx; if (xx < 0 || xx >= w) continue;
+            const j = yy * w + xx; if (!visto[j] && m[j]) { visto[j] = 1; fila[fim++] = j; }
+          }
+        }
+      }
+      caixas.push({ x0, y0, x1, y1, n: fim });
+    }
+    return caixas;
+  }
+  /**
+   * Pares símbolo + cruz do gabarito da loja (grade de símbolos, cada um ao lado de uma cruz).
+   * Junta as peças de cada símbolo e o símbolo com a sua cruz (perto na horizontal, mesma altura),
+   * descarta cantoneiras e barra (traços alongados) e numera as linhas da grade de cima para baixo
+   * (cada linha = um símbolo). As cruzes sozinhas da coluna do meio ficam marcadas `soCruz`.
+   * @param mask  marcas do gabarito (255 = preto) no tamanho w × h da arte; pxPorCm dessa imagem
+   * @returns [{x0, y0, x1, y1, cx, cy, linha, soCruz}]
+   */
+  function lerMarcasGabarito(mask, w, h, pxPorCm) {
+    // fora: barra (traço alongado e grande), cantoneiras (encostam na borda da página) e sujeira.
+    // Traço pequeno fica: "=" e "[]" são feitos de peças finas
+    const borda = 0.2 * pxPorCm;
+    let cs = caixasDeManchas(mask, w, h).filter(b => {
+      const bw = b.x1 - b.x0 + 1, bh = b.y1 - b.y0 + 1, maior = Math.max(bw, bh);
+      const naBorda = b.x0 < borda || b.y0 < borda || b.x1 > w - 1 - borda || b.y1 > h - 1 - borda;
+      const barra = maior > 1.5 * pxPorCm && maior / Math.min(bw, bh) >= 4;
+      return !naBorda && !barra && maior < 3 * pxPorCm && b.n >= 2;
+    });
+    // símbolo ↔ cruz: até 1 cm na horizontal (no gabarito da loja, 0,4–0,7 cm; colunas a mais de 3,5 cm)
+    const gx = 1.0 * pxPorCm, gy = 0.3 * pxPorCm;
+    for (let junto = true; junto;) {
+      junto = false;
+      for (let i = 0; i < cs.length && !junto; i++) for (let j = i + 1; j < cs.length && !junto; j++) {
+        const a = cs[i], b = cs[j];
+        const vaoX = Math.max(a.x0, b.x0) - Math.min(a.x1, b.x1), vaoY = Math.max(a.y0, b.y0) - Math.min(a.y1, b.y1);
+        if (vaoX < gx && vaoY < gy) {
+          cs[i] = { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1), n: a.n + b.n };
+          cs.splice(j, 1); junto = true;
+        }
+      }
+    }
+    const marcas = cs.map(b => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, soCruz: (b.x1 - b.x0 + 1) < 1.4 * pxPorCm }));
+    // linhas da grade: agrupa pela altura do centro
+    const porY = marcas.slice().sort((p, q) => p.cy - q.cy);
+    let linha = -1, ultimo = -Infinity;
+    for (const m of porY) { if (m.cy - ultimo > 0.7 * pxPorCm) linha++; m.linha = linha; ultimo = m.cy; }
+    return marcas;
+  }
+  /**
+   * Escolhe, para uma cor, pares do gabarito em volta da arte dela: o mais perto em cada canto
+   * (cima-esquerda, cima-direita, baixo-esquerda, baixo-direita; com n = 2, só as diagonais). Só
+   * entram pares que não encostam em tinta da folha (`ocupado`, com `folga` px) e cujo símbolo
+   * (linha) ainda não foi usado por outra cor da mesma folha (`usadas`). Cruz sem símbolo não entra.
+   */
+  function escolherMarcas(marcas, ocupado, w, h, arte, usadas, o) {
+    o = o || {};
+    const f = Math.round(def(o.folga, 4)), n = def(o.n, 4), cx = (arte[0] + arte[2]) / 2, cy = (arte[1] + arte[3]) / 2;
+    const livre = m => {
+      for (let y = Math.max(0, m.y0 - f); y <= Math.min(h - 1, m.y1 + f); y++)
+        for (let x = Math.max(0, m.x0 - f), r = y * w; x <= Math.min(w - 1, m.x1 + f); x++) if (ocupado[r + x]) return false;
+      return true;
+    };
+    const dist = m => Math.hypot(Math.max(arte[0] - m.cx, 0, m.cx - arte[2]), Math.max(arte[1] - m.cy, 0, m.cy - arte[3]));
+    const cands = marcas.filter(m => !m.soCruz && !usadas.has(m.linha) && livre(m)).sort((p, q) => dist(p) - dist(q));
+    const cantos = n === 2 ? [0, 3] : [0, 1, 2, 3], linhas = new Set(), sel = [];
+    for (const q of cantos) {
+      const m = cands.find(c => ((c.cy < cy ? 0 : 2) + (c.cx < cx ? 0 : 1)) === q && !linhas.has(c.linha));
+      if (m) { sel.push(m); linhas.add(m.linha); }
+    }
+    return sel;
+  }
+
   /* ---------- prova de cor ---------- */
   /**
    * @param camadas [{canal, hex}] na ordem de impressão (base primeiro)
@@ -533,5 +618,5 @@
 
   const cobertura = c => { let s = 0; for (let i = 0; i < c.length; i++) s += c[i]; return s / 255 / c.length; };
 
-  return { paleta, separar, pipeline, sobra, limpar, limiar, marcasDoGabarito, zonaDegrade, simularFilme, fracaoDegrade, filme, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
+  return { paleta, separar, pipeline, sobra, limpar, limiar, marcasDoGabarito, lerMarcasGabarito, escolherMarcas, zonaDegrade, simularFilme, fracaoDegrade, filme, baseBranca, tracoPreto, trap, tipoTom, ordenar, agrupar, caixa, erodir, dilatar, reticular, simular, cobertura, rgb2lab, lab2rgb, hex, hex2rgb, dE };
 });

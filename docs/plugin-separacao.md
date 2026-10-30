@@ -77,14 +77,12 @@ Uso: o gabarito é o fundo de todos os canais; em cada canal o separador copia o
 próximos da arte. O gabarito impresso fica fixo no berço: o fotolito encaixa nos símbolos na gravação
 e no registro das cores — por isso várias cores podem dividir a mesma folha de fotolito.
 
-Na extensão (modo canais): fotolito **1:1** com a arte (sem margem, cruzes ou título da extensão); a
-prova estampada esconde as marcas copiadas do gabarito (mancha inteira dentro de uma marca =
-marca; arte que cruza a grade fica). Os fotolitos mantêm as marcas.
-
-## A fazer
-
-- **Marcas automáticas**: a extensão escolher, para cada canal, os pares símbolo+cruz do gabarito
-  mais próximos da arte (sem repetir entre cores da mesma folha) e colocá-los no canal/fotolito.
+Na extensão: fotolito **1:1** com a arte (sem margem, cruzes ou título da extensão no modo canais) e
+**marcas automáticas**: `lerMarcasGabarito` acha os 92 pares símbolo+cruz (23 linhas × 4) e as 23
+cruzes do meio; `escolherMarcas` dá a cada cor o par mais perto da arte em cada canto (4, ou 2 em
+cantos opostos), sem encostar em tinta da folha e sem repetir símbolo entre cores da mesma folha; os
+pixels do gabarito desses pares são gravados no fotolito. A lista de telas mostra os símbolos de cada
+cor. Marcas que o separador já colocou nos canais ficam como estão (a escolha desvia delas).
 - Corte de ponto mínimo/máximo na retícula e tira de teste de retícula.
 
 ## Fases

@@ -47,6 +47,7 @@ label.chk{display:flex;gap:6px;align-items:center}
 .tag{font-size:9.5px;padding:0 5px;border-radius:8px;background:#555;color:#ddd}
 .tag.degrade{background:#6a3d9a}
 .tela select.modo{margin-left:auto;font-size:11px;padding:1px 3px}
+.tela .marcas{font-size:12px;letter-spacing:2px;color:#ffd27a}
 body:not(.modo-canais) .so-canais{display:none}
 body.modo-canais .so-auto{display:none!important}.tag.traco{background:#111}.tag.base{background:#2b5b93}
 .barra{height:4px;background:#2a2a2a;border-radius:2px;overflow:hidden}
@@ -64,10 +65,6 @@ body.modo-canais .so-auto{display:none!important}.tag.traco{background:#111}.tag
   <div class="sec so-canais"><h3><span class="n">2</span>Canais do documento</h3><div class="bd">
     <div class="hint">Na ordem do painel Canais (= ordem de impressão). O número “#NN” do nome é usado no fotolito. Canais com “Camiseta” no nome definem a cor da camiseta e não viram tela.</div>
     <div class="row"><label class="f">Cor da camiseta<input type="color" id="camisetaCanais" value="#111111"></label></div>
-    <label class="f">Gabarito de registro (PDF ou imagem do tamanho da arte)
-      <div class="row"><input type="text" id="gabarito" placeholder="Ex.: ...\Serigrafia\Gabarito 33x46,67.pdf" style="flex:1"><button class="btn" id="btnGabarito">Escolher…</button></div></label>
-    <label class="chk"><input type="checkbox" id="escondeMarcas" checked> Esconder as marcas do gabarito na prova (não vão para a camiseta)</label>
-    <div class="status" id="stGab">Sem gabarito: a prova mostra as marcas que estão nos canais.</div>
   </div></div>
 
   <div class="sec so-auto"><h3><span class="n">2</span>Regiões e paleta</h3><div class="bd">
@@ -115,6 +112,11 @@ body.modo-canais .so-auto{display:none!important}.tag.traco{background:#111}.tag
     <div class="row"><label class="f">LPI<input type="number" id="lpi" value="45" min="15" max="85"></label>
       <label class="f">Ângulo<input type="number" id="ang" value="22.5" step="0.5"></label>
       <label class="f">dpi do fotolito<input type="number" id="dpiRet" value="900" step="100" min="300"></label></div>
+    <label class="f">Gabarito de registro da loja (PDF ou imagem do tamanho da arte)
+      <div class="row"><input type="text" id="gabarito" placeholder="Ex.: ...\Serigrafia\Gabarito 33x46,67.pdf" style="flex:1"><button class="btn" id="btnGabarito">Escolher…</button></div></label>
+    <label class="chk"><input type="checkbox" id="marcasGab" checked> Colocar marcas do gabarito nos fotolitos (pares símbolo + cruz perto da arte de cada cor)</label>
+    <div class="row"><label class="f">Marcas por cor<select id="nMarcas"><option value="4">4 — um em cada canto</option><option value="2">2 — cantos opostos</option></select></label></div>
+    <div class="status" id="stGab">Sem gabarito: clique em “Escolher…” e indique o PDF do gabarito.</div>
     <label class="chk"><input type="checkbox" id="marcasExt" checked> Acrescentar margem, cruzes e título (o fotolito fica maior que a arte)</label>
     <div class="hint so-canais">Desligado = fotolito 1:1 com a arte e o gabarito: as marcas são as dos seus canais.</div>
     <div class="row"><label class="f">Margem (cm)<input type="number" id="margemCm" value="2" step="0.5" min="1"></label>

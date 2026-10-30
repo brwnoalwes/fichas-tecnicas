@@ -39,13 +39,16 @@ function modoFonte(f) {
   $("#marcasExt").checked = f !== "canais";
 }
 
-/* ---------- gabarito de registro da loja ---------- */
+/* ---------- gabarito de registro da loja: marcas automáticas nos fotolitos ---------- */
+// símbolos da grade do gabarito, de cima para baixo (linha 0 = ♠)
+const SIMBOLOS = ["♠", "♥", "♦", "♣", "♪", "♫", "☼", "θ", "☺", "◊", "□", "▲", "╬", "†", "#", "Δ", "₳", "@", "$", "%", "&", "[]", "="];
+const simbolo = m => SIMBOLOS[m.linha] || "L" + (m.linha + 1);
 const imagemDe = arq => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("Não consegui abrir " + arq)); im.src = urlArquivo(arq); });
-// máscara das marcas do gabarito (resolução cheia e prévia), para escondê-las na prova; os fotolitos mantêm as marcas
+// desenha o gabarito no tamanho da arte e acha os pares símbolo + cruz (st.gabMarcas, em px da arte)
 async function prepararGabarito() {
-  st.gabMask = null; st.gabMaskPrev = null;
+  st.gabMask = null; st.gabMarcas = null; st.gabMarcasPrev = null;
   const arq = $("#gabarito").value.trim();
-  if (!arq) { status("#stGab", "Sem gabarito: a prova mostra as marcas que estão nos canais. Clique em “Escolher…” e indique o PDF do gabarito."); return; }
+  if (!arq) { status("#stGab", "Sem gabarito: clique em “Escolher…” e indique o PDF do gabarito."); return; }
   if (!st.W || !fs) return;
   try {
     if (!fs.existsSync(arq)) throw new Error("Gabarito não encontrado: " + arq);
@@ -55,10 +58,43 @@ async function prepararGabarito() {
     if (/\.pdf$/i.test(arq)) g = window.Gabarito.lerPDF(fs, path, nreq("zlib"), arq, TMP);
     else { const im = await imagemDe(arq); g = { paginaW: im.naturalWidth, paginaH: im.naturalHeight, imagens: [{ arquivo: arq, x: 0, y: 0, w: im.naturalWidth, h: im.naturalHeight }], linhas: [] }; }
     const dif = Math.abs(g.paginaW / g.paginaH - st.W / st.H) / (st.W / st.H);
-    st.gabMask = await window.Gabarito.mascara(g, st.W, st.H, 0.3 / 25.4 * st.dpi, M, imagemDe);
-    st.gabMaskPrev = reduzirMascara(st.gabMask, st.W, st.H, st.prev.w, st.prev.h).map(v => v > 0 ? 255 : 0);
-    status("#stGab", dif > 0.01 ? "Gabarito carregado, mas com proporção diferente da arte: confira o tamanho." : "Gabarito carregado: as marcas dele não aparecem na prova (continuam nos fotolitos).", dif > 0.01 ? "erro" : "ok");
+    st.gabMask = await window.Gabarito.mascara(g, st.W, st.H, 0, M, imagemDe);
+    st.gabMarcas = M.lerMarcasGabarito(st.gabMask, st.W, st.H, st.dpi / 2.54);
+    // as mesmas marcas na escala da prévia (onde a escolha é feita); `orig` = a marca em px da arte
+    const k = st.prev.w / st.W;
+    st.gabMarcasPrev = st.gabMarcas.map(m => ({ x0: m.x0 * k, y0: m.y0 * k, x1: m.x1 * k, y1: m.y1 * k, cx: m.cx * k, cy: m.cy * k, linha: m.linha, soCruz: m.soCruz, orig: m }));
+    const pares = st.gabMarcas.filter(m => !m.soCruz).length, linhas = new Set(st.gabMarcas.map(m => m.linha)).size;
+    status("#stGab", (dif > 0.01 ? "Atenção: proporção do gabarito diferente da arte. " : "") + `Gabarito lido: ${pares} pares símbolo + cruz em ${linhas} linhas.`, dif > 0.01 || !pares ? "erro" : "ok");
   } catch (e) { status("#stGab", e.message, "erro"); }
+}
+// para cada folha de fotolito, escolhe as marcas de cada cor (sem repetir símbolo na folha)
+function escolherMarcasDasTelas(plano, grupos) {
+  plano.forEach(t => { t.marcas = []; });
+  if (!st.gabMarcasPrev || !$("#marcasGab").checked) return;
+  const p = st.prev, N = p.w * p.h, folga = 0.3 * p.w / (st.W / st.dpi * 2.54), n = +$("#nMarcas").value;
+  for (const g of grupos) {
+    const ocupado = new Uint8Array(N);
+    for (const i of g) { const c = plano[i].canal; for (let q = 0; q < N; q++) if (c[q] > 25) ocupado[q] = 255; }
+    const usadas = new Set();
+    for (const i of g) {
+      const arte = M.caixa(plano[i].canal, p.w, p.h); if (!arte) continue;
+      plano[i].marcas = M.escolherMarcas(st.gabMarcasPrev, ocupado, p.w, p.h, arte, usadas, { n, folga });
+      plano[i].marcas.forEach(m => usadas.add(m.linha));
+    }
+  }
+}
+// grava as marcas escolhidas (pixels do gabarito) numa faixa de fotolito: `out` com 0 = tinta, linhas y0..y0+nl
+// da arte, em escala s (fotolito com s× a resolução da arte)
+function carimbarMarcas(out, marcas, y0, nl, s) {
+  if (!st.gabMask || !marcas || !marcas.length) return;
+  const W = st.W, W2 = W * s, b = 2;
+  for (const mp of marcas) {
+    const m = mp.orig, ya = Math.max(y0, m.y0 - b), yb = Math.min(y0 + nl - 1, m.y1 + b);
+    for (let y = ya; y <= yb; y++) for (let x = Math.max(0, m.x0 - b); x <= Math.min(W - 1, m.x1 + b); x++) {
+      if (!st.gabMask[y * W + x]) continue;
+      for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) out[((y - y0) * s + dy) * W2 + x * s + dx] = 0;
+    }
+  }
 }
 $("#btnGabarito").onclick = async () => {
   try {
@@ -67,8 +103,7 @@ $("#btnGabarito").onclick = async () => {
   } catch (e) { status("#stGab", "Não consegui abrir a janela de arquivos (" + e.message + "). Cole o caminho do gabarito no campo e tecle Enter.", "erro"); }
 };
 $("#gabarito").addEventListener("change", async () => { salvarPreferencias(); await prepararGabarito(); separar(); });
-$("#escondeMarcas").addEventListener("change", () => { salvarPreferencias(); separar(); });
-const marcasNaProva = () => st.fonte === "canais" && $("#escondeMarcas").checked;
+["marcasGab", "nMarcas"].forEach(id => $("#" + id).addEventListener("change", () => { salvarPreferencias(); separar(); }));
 $("#btnLer").onclick = async () => {
   try {
     modoFonte("auto");
@@ -79,6 +114,7 @@ $("#btnLer").onclick = async () => {
       st.doc = { nome: r.nome, pasta: r.pasta };
       st.dpi = r.dpi;
       await carregarImagem(urlArquivo(r.png));
+      await prepararGabarito(); separar();
     } else {
       const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*";
       inp.onchange = async () => { const f = inp.files[0]; if (!f) return; st.doc = { nome: f.name, pasta: null }; st.dpi = 300; await carregarImagem(URL.createObjectURL(f)); };
@@ -353,21 +389,16 @@ function finalizarPlano(plano, fora, assin, camHex) {
   // canais do documento já estão em resolução cheia: os .raw lidos do PSD são as telas
   if (canais) st.raws = { assin, arqs: plano.map(t => t.raw) };
 
-  // marcas copiadas do gabarito não vão para a camiseta: saem da prova (os fotolitos continuam com elas)
-  const mk = marcasNaProva() && st.gabMaskPrev;
-  const semMarcas = t => {
-    if (!mk) return t.filmePrev;
-    const rem = M.marcasDoGabarito(t.canal, p.w, p.h, mk), o = t.filmePrev.slice();
-    for (let i = 0; i < o.length; i++) if (rem[i]) o[i] = 0;
-    return o;
-  };
-  const prova = M.simular(plano.map(t => ({ canal: semMarcas(t), hex: t.hex })), p.w, p.h, camHex);
+  // marcas do gabarito de cada cor (ficam só nos fotolitos; não entram na prova)
+  escolherMarcasDasTelas(plano, st.grupos);
+  const prova = M.simular(plano.map(t => ({ canal: t.filmePrev, hex: t.hex })), p.w, p.h, camHex);
   const cv = $("#cvProva"); cv.width = p.w; cv.height = p.h; cv.getContext("2d").putImageData(new ImageData(prova, p.w, p.h), 0, 0);
   status("#stPrev", `${plano.length} telas em ${st.grupos.length} fotolitos` + (fora > 0.01 ? ` · ${fmt(fora * 100)}% fora da paleta: aumente o máximo de cores` : ""), fora > 0.01 ? "erro" : "ok");
   $("#telas").innerHTML = plano.map(t => `<div class="tela"><i style="background:${t.hex}"></i><b>${t.num}</b> ${esc(t.nome)}
     ${t.base ? '<span class="tag base">base</span>' : t.traco ? '<span class="tag traco">traço</span>' : ""}
     ${t.ret >= 0.02 ? `<span class="tag degrade">${t.ret > 0.9 ? "retícula" : "misto " + Math.round(t.ret * 100) + "% ret."}</span>` : '<span class="tag">chapado</span>'}
     <span class="hint">${fmt(M.cobertura(t.canal) * 100)}%</span>
+    ${t.marcas && t.marcas.length ? `<span class="marcas" title="Marcas do gabarito neste fotolito">${t.marcas.map(simbolo).join(" ")}</span>` : ""}
     <select class="modo" data-modo="${t.chaveModo}" title="Auto: chapa o sólido e reticula o degradê">${(canais ? [["chapado", "Chapado"], ["reticula", "Retícula"]] : [["auto", "Auto"], ["chapado", "Chapado"], ["reticula", "Retícula"]]).map(x => `<option value="${x[0]}" ${t.modo === x[0] ? "selected" : ""}>${x[1]}</option>`).join("")}</select></div>`).join("");
   ["#btnCanais", "#btnFotos", "#btnFicha", "#btnProva"].forEach(id => { $(id).disabled = !plano.length || (id !== "#btnFicha" && !CEP) || (id === "#btnCanais" && canais); });
   salvarPreferencias();
@@ -454,12 +485,11 @@ async function fotolitosDosCanais() {
   for (let k = 0; k < N; k++) {
     const g = st.grupos[k], ts = g.map(i => st.plano[i]), nums = ts.map(t => t.num).join(" "), nomes = ts.map(t => t.nome).join(" + ");
     const ret = ts.length === 1 && ts[0].modo === "reticula";
-    let raw = raws.arqs[g[0]];
-    if (g.length > 1) { // várias cores na mesma folha: o mais escuro (mais tinta) vence
-      const u = fs.readFileSync(raws.arqs[g[0]]);
-      for (const i of g.slice(1)) { const b = fs.readFileSync(raws.arqs[i]); for (let q = 0; q < u.length; q++) if (b[q] < u[q]) u[q] = b[q]; }
-      raw = path.join(TMP, "fotolito.raw"); fs.writeFileSync(raw, u);
-    }
+    // folha = cópia da 1ª tela + as outras do grupo (o mais escuro vence) + as marcas do gabarito de cada cor
+    const u = fs.readFileSync(raws.arqs[g[0]]);
+    for (const i of g.slice(1)) { const b = fs.readFileSync(raws.arqs[i]); for (let q = 0; q < u.length; q++) if (b[q] < u[q]) u[q] = b[q]; }
+    for (const i of g) carimbarMarcas(u, st.plano[i].marcas, 0, st.H, 1);
+    const raw = path.join(TMP, "fotolito.raw"); fs.writeFileSync(raw, u);
     barra(k / N); status("#stSaida", `Fotolito ${k + 1} de ${N} (${nums}): gravando o PDF no Photoshop…`);
     const r = await host("gerarFotolitos", { saida, margemCm: +$("#margemCm").value, espelhar: $("#espelhar").checked, marcas: $("#marcasExt").checked, fotolitos: [{
       arquivo: (nums + " " + nomes).replace(/[\\/:*?"<>|]/g, "-") + ".pdf", raw, w: st.W, h: st.H, dpi: st.dpi, saidaDpi: dpiOut,
@@ -484,6 +514,7 @@ $("#btnFotos").onclick = () => tarefa("#btnFotos", async () => {
       await porFaixasFilme(raws.arqs, g, (filmes, y0) => {
         const out = Buf.alloc(filmes[0].length, 255); // várias cores na mesma folha: soma as áreas
         for (const f of filmes) for (let q = 0; q < f.length; q++) if (f[q]) out[q] = 0;
+        for (const i of g) carimbarMarcas(out, st.plano[i].marcas, y0, Math.min(FAIXA, st.H - y0), sd.s);
         fs.writeSync(fd, out);
         barra((k + (y0 + FAIXA) / st.H) / N);
         status("#stSaida", `Fotolito ${k + 1} de ${N} (${nums})… ${Math.min(100, Math.round((y0 + FAIXA) / st.H * 100))}%`);
@@ -550,19 +581,10 @@ $("#btnProva").onclick = () => tarefa("#btnProva", async () => {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const o = y * L + 1 + x * 3; rgb[o] = cam[0]; rgb[o + 1] = cam[1]; rgb[o + 2] = cam[2]; }
   for (let i = 0; i < N; i++) {
     const c = M.hex2rgb(st.plano[i].hex), W2 = W * s;
-    // marcas copiadas do gabarito nesta tela: não vão para a camiseta (o fotolito continua com elas)
-    let mk = null;
-    if (marcasNaProva() && st.gabMask) {
-      status("#stSaida", `Prova estampada: tela ${i + 1} de ${N}, achando as marcas do gabarito…`); await espera();
-      const buf = fs.readFileSync(raws.arqs[i]), tinta = new Uint8Array(buf.length);
-      for (let q = 0; q < buf.length; q++) tinta[q] = 255 - buf[q];
-      mk = M.marcasDoGabarito(tinta, W, H, st.gabMask);
-    }
     await porFaixasFilme(raws.arqs, [i], (filmes, y0, nl) => {
       const f = filmes[0];
       // fotolito na resolução de saída → fração de tinta em cada pixel da arte (os pontos aparecem)
       for (let y = 0; y < nl; y++) for (let x = 0; x < W; x++) {
-        if (mk && mk[(y0 + y) * W + x]) continue;
         let n = 0;
         for (let dy = 0; dy < s; dy++) { const r = (y * s + dy) * W2 + x * s; for (let dx = 0; dx < s; dx++) if (f[r + dx]) n++; }
         if (!n) continue;
@@ -595,7 +617,7 @@ SAIDAS.forEach(x => {
 ["camiseta", "camisetaCanais", "bordas", "tracoOn", "baseOn", "juntar", "folga", "pontoMin", "pontoMax"].forEach(id => $("#" + id).addEventListener("input", separar));
 // v2: retícula mista e "passagem entre cores" com degradê por padrão (a v1 guardava "auto")
 const CHAVE_PREF = "estamparia-separacao-v2";
-const PREF = ["maxCores", "mesclar", "bordas", "tracoOn", "alcance", "trapMm", "baseOn", "choke", "raioDeg", "pontoMin", "pontoMax", "camPrev", "substituir", "lpi", "ang", "dpiRet", "margemCm", "folga", "juntar", "espelhar", "gabarito", "escondeMarcas"];
+const PREF = ["maxCores", "mesclar", "bordas", "tracoOn", "alcance", "trapMm", "baseOn", "choke", "raioDeg", "pontoMin", "pontoMax", "camPrev", "substituir", "lpi", "ang", "dpiRet", "margemCm", "folga", "juntar", "espelhar", "gabarito", "marcasGab", "nMarcas"];
 function salvarPreferencias() {
   try { localStorage.setItem(CHAVE_PREF, JSON.stringify(PREF.reduce((o, id) => { const el = $("#" + id); o[id] = el.type === "checkbox" ? el.checked : el.value; return o; }, {}))); } catch (e) { /* sem armazenamento */ }
 }

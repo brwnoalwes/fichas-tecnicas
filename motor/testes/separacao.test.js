@@ -304,6 +304,46 @@ test("marcas do gabarito: some a marca isolada, fica a arte que passa por cima d
   assert.equal(m[9 * w + 31], 0);
 });
 
+// gabarito sintético a 10 px/cm: 5 linhas × [símbolo+cruz] nas laterais e cruz sozinha no meio, + barra no topo
+function gabaritoSintetico() {
+  const w = 300, h = 140, m = new Uint8Array(w * h), q = (x, y, a, b) => { for (let yy = y; yy < y + b; yy++) for (let xx = x; xx < x + a; xx++) m[yy * w + xx] = 255; };
+  q(60, 1, 180, 1); // barra
+  for (let r = 0; r < 5; r++) {
+    const y = 15 + r * 25;
+    // vão símbolo↔cruz ≈ 0,4 cm, como no gabarito real
+    q(14, y, 6, 6); q(24, y, 9, 9); q(145, y, 9, 9); q(260, y, 9, 9); q(273, y, 6, 3); q(273, y + 4, 6, 2); // "=" em duas peças
+  }
+  return { m, w, h };
+}
+
+test("gabarito: acha os pares símbolo+cruz, linhas da grade e cruzes do meio", () => {
+  const { m, w, h } = gabaritoSintetico();
+  const ms = M.lerMarcasGabarito(m, w, h, 10);
+  assert.equal(ms.length, 15, "5 linhas × 3 (par esquerdo, cruz do meio, par direito); a barra fica de fora");
+  assert.equal(ms.filter(x => x.soCruz).length, 5);
+  assert.deepEqual([...new Set(ms.map(x => x.linha))], [0, 1, 2, 3, 4]);
+  const dir = ms.find(x => x.linha === 2 && x.cx > 200);
+  assert.ok(dir.x0 <= 260 && dir.x1 >= 278 && dir.y1 >= dir.y0 + 8, "o '=' em duas peças junta com a cruz");
+});
+
+test("gabarito: escolhe marcas livres perto da arte, sem repetir símbolo na folha", () => {
+  const { m, w, h } = gabaritoSintetico();
+  const ms = M.lerMarcasGabarito(m, w, h, 10), ocupado = new Uint8Array(w * h);
+  for (let y = 40; y < 100; y++) for (let x = 60; x < 230; x++) ocupado[y * w + x] = 255; // arte no meio
+  const usadas = new Set();
+  const a = M.escolherMarcas(ms, ocupado, w, h, [60, 40, 229, 99], usadas, { folga: 2 });
+  assert.equal(a.length, 4, "um par em cada canto");
+  assert.ok(a.every(x => !x.soCruz));
+  assert.equal(new Set(a.map(x => x.linha)).size, 4, "símbolos diferentes");
+  a.forEach(x => usadas.add(x.linha));
+  const b = M.escolherMarcas(ms, ocupado, w, h, [60, 40, 229, 99], usadas, { folga: 2, n: 2 });
+  assert.ok(b.every(x => !usadas.has(x.linha)), "a 2ª cor da folha não repete símbolo da 1ª");
+  // par que encosta na arte não entra
+  for (let y = 60; y < 80; y++) for (let x = 5; x < 40; x++) ocupado[y * w + x] = 255;
+  const c = M.escolherMarcas(ms, ocupado, w, h, [5, 40, 229, 99], new Set(), { folga: 2 });
+  assert.ok(c.every(x => !(x.cx < 50 && x.cy > 55 && x.cy < 85)));
+});
+
 test("simular: base branca sob o vermelho sobre camiseta preta", () => {
   const w = 2, h = 1, cheio = new Uint8Array([255, 0]);
   const out = M.simular([{ canal: cheio, hex: "#ffffff" }, { canal: cheio, hex: "#d21e28" }], w, h, "#111111");
