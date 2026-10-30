@@ -45,7 +45,7 @@ const imagemDe = arq => new Promise((res, rej) => { const im = new Image(); im.o
 async function prepararGabarito() {
   st.gabMask = null; st.gabMaskPrev = null;
   const arq = $("#gabarito").value.trim();
-  if (!arq) { status("#stGab", "Sem gabarito: a prova mostra as marcas que estão nos canais."); return; }
+  if (!arq) { status("#stGab", "Sem gabarito: a prova mostra as marcas que estão nos canais. Clique em “Escolher…” e indique o PDF do gabarito."); return; }
   if (!st.W || !fs) return;
   try {
     if (!fs.existsSync(arq)) throw new Error("Gabarito não encontrado: " + arq);
@@ -62,9 +62,9 @@ async function prepararGabarito() {
 }
 $("#btnGabarito").onclick = async () => {
   try {
-    const r = window.cep.fs.showOpenDialog(false, false, "Gabarito de registro", "", ["pdf", "png", "jpg", "jpeg"]);
-    if (r && r.data && r.data[0]) { $("#gabarito").value = r.data[0]; salvarPreferencias(); await prepararGabarito(); separar(); }
-  } catch (e) { status("#stGab", "Não consegui abrir a janela de arquivos: digite o caminho no campo.", "erro"); }
+    const r = await host("escolherArquivo", { titulo: "Gabarito de registro" });
+    if (r.caminho) { $("#gabarito").value = r.caminho; salvarPreferencias(); await prepararGabarito(); separar(); }
+  } catch (e) { status("#stGab", "Não consegui abrir a janela de arquivos (" + e.message + "). Cole o caminho do gabarito no campo e tecle Enter.", "erro"); }
 };
 $("#gabarito").addEventListener("change", async () => { salvarPreferencias(); await prepararGabarito(); separar(); });
 $("#escondeMarcas").addEventListener("change", () => { salvarPreferencias(); separar(); });

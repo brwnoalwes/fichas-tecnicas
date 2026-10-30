@@ -299,5 +299,15 @@ function abrirProva(s) {
     } catch (e) { return _erro(e); }
 }
 
+/** Janela "Abrir" do Photoshop (a do painel CEP não abre em todas as versões). a = {titulo} */
+function escolherArquivo(s) {
+    try {
+        var a = _ler(s);
+        var f = File.openDialog(a.titulo || "Escolha o arquivo", "Gabarito (PDF, PNG, JPG):*.pdf;*.png;*.jpg;*.jpeg,Todos os arquivos:*.*");
+        if (!f) return _json({ ok: true, cancelado: true });
+        return _json({ ok: true, caminho: f.fsName });
+    } catch (e) { return _erro(e); }
+}
+
 /** Abre a pasta no Explorer. */
 function abrirPasta(s) { try { new Folder(_ler(s).pasta).execute(); return _json({ ok: true }); } catch (e) { return _erro(e); } }
