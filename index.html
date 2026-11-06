@@ -123,6 +123,7 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .badge{font-size:11px;padding:1px 7px;border-radius:20px;background:#e9e6e0;color:#55524c;font-weight:600}
 .badge.frente{background:#e3ecf7;color:#2b5b93}
 .badge.costas{background:#efe5f6;color:#6a3a8c}
+.add-locais{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;font-size:13px;color:var(--muted)}
 .badge.mangaE,.badge.mangaD{background:#e4f3ea;color:#2d6a45}
 .art-bd{padding:12px 10px;display:grid;gap:12px;border-top:1px solid var(--line)}
 .cor-row{border-bottom:1px solid var(--line);padding:7px 0;display:grid;gap:5px}
@@ -749,7 +750,8 @@ function editorHTML(p) {
         <label class="f span2"><span>Observações</span><textarea data-s="p" data-k="notas">${esc(p.notas)}</textarea></label>
       </div></div>
 
-      <div class="card"><h3>Estampas <span class="sp"></span><button class="btn sm" data-act="importPS" title="Arquivo gerado pelo script “Enviar para a ficha” no Photoshop">+ Do Photoshop</button><button class="btn sm" data-act="addArt">+ Adicionar arte</button></h3><div class="bd">
+      <div class="card"><h3>Estampas <span class="sp"></span><button class="btn sm" data-act="importPS" title="Arquivo gerado pelo script “Enviar para a ficha” no Photoshop">+ Do Photoshop</button></h3><div class="bd">
+        <div class="add-locais"><span>+ Adicionar arte na:</span>${Object.entries(LOCAIS).map(([k, l]) => `<button class="btn sm" data-act="addArt" data-lado="${k}">${l}</button>`).join("")}</div>
         ${p.estampas.map(a => artCardHTML(a)).join("") || `<div class="hint">Nenhuma estampa. Use “+ Adicionar arte” (PNG com fundo transparente é o ideal).</div>`}
       </div></div>
 
@@ -1299,17 +1301,19 @@ function newProduct(copyFrom) {
   state.products.unshift(p); ui.productId = p.id; ui.selArt = null;
   save(); render();
 }
-function addArt(swapId) {
+function addArt(swapId, local) {
   pickFile("image/*", async f => {
     try {
       const im = await readImage(f, 2400, true);
       const p = cur();
       if (swapId) { const a = p.estampas.find(x => x.id === swapId); a.img = im.img; a.ar = im.ar; }
       else {
-        const lado = ui.lado;
-        const a = { id: uid(), nome: f.name.replace(/\.[^.]+$/, ""), lado, img: im.img, ar: im.ar, wCm: lado === "costas" ? 28 : 25, yCm: lado === "costas" ? 8 : 9, offX: 0,
+        const lado = LOCAIS[local] ? local : ui.lado, manga = lado === "mangaE" || lado === "mangaD";
+        const a = { id: uid(), nome: f.name.replace(/\.[^.]+$/, ""), lado, img: im.img, ar: im.ar, wCm: manga ? 8 : lado === "costas" ? 28 : 25, yCm: manga ? 4 : lado === "costas" ? 8 : 9, offX: 0,
           baseBranca: true, flash: true, malha: "", cura: "", obs: "", cores: [{ nome: "Branco", pantone: "", hex: "#ffffff", tipo: "Plastisol" }] };
         if (a.wCm * a.ar > 38) a.wCm = r1(38 / a.ar);
+        if (manga && a.wCm * a.ar > 12) a.wCm = r1(12 / a.ar);
+        ui.lado = vistaDe(a);
         p.estampas.push(a); ui.selArt = a.id;
       }
       p.atualizado = Date.now(); save(); render();
@@ -1343,7 +1347,7 @@ document.addEventListener("click", async e => {
       ui.selArt = ui.selArt === id ? null : id;
       if (ui.selArt) ui.lado = p.estampas.find(a => a.id === id).lado;
       return render();
-    case "addArt": return addArt();
+    case "addArt": return addArt(null, el.dataset.lado);
     case "swapArt": return addArt(id);
     case "delArt":
       if (!confirm("Excluir esta estampa?")) return;
