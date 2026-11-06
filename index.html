@@ -104,6 +104,7 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .mk .art:active{cursor:grabbing}
 .mk .lbl{position:absolute;left:50%;top:100%;transform:translate(-50%,6px);background:#000c;color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;white-space:nowrap;pointer-events:none}
 .mk .gl-v{position:absolute;top:0;bottom:0;border-left:1px dashed #ffffff55;pointer-events:none}
+.mk .mk-aviso{position:absolute;left:8px;right:8px;bottom:8px;background:#fff3cd;color:#6b4e00;border-radius:6px;padding:6px 8px;font-size:12px}
 .mk .gl-dot{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;border:2px solid #ff6a5a;pointer-events:none}
 .mk .gl-h{position:absolute;border-top:1px dashed #ff6a5a88;pointer-events:none}
 .mk .scale{position:absolute;bottom:2.5%;left:3%;height:8px;border:2px solid #555;border-top:0;pointer-events:none}
@@ -122,6 +123,7 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .badge{font-size:11px;padding:1px 7px;border-radius:20px;background:#e9e6e0;color:#55524c;font-weight:600}
 .badge.frente{background:#e3ecf7;color:#2b5b93}
 .badge.costas{background:#efe5f6;color:#6a3a8c}
+.badge.mangaE,.badge.mangaD{background:#e4f3ea;color:#2d6a45}
 .art-bd{padding:12px 10px;display:grid;gap:12px;border-top:1px solid var(--line)}
 .cor-row{border-bottom:1px solid var(--line);padding:7px 0;display:grid;gap:5px}
 .cor-l1{display:grid;grid-template-columns:38px minmax(0,1fr) 80px 118px auto;gap:5px;align-items:center}
@@ -162,7 +164,7 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .vcard.calib .mk{cursor:crosshair;outline:3px solid var(--accent)}
 .pt{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 0 0 1px #0005;pointer-events:none}
 .pt span{position:absolute;left:16px;top:-3px;font-size:11px;background:#000b;color:#fff;padding:1px 5px;border-radius:4px;white-space:nowrap}
-.calib-msg{background:var(--accent);color:#fff;border-radius:7px;padding:8px 10px;font-size:13px;margin-bottom:8px}
+.calib-msg{background:var(--accent);color:#fff;border-radius:7px;padding:8px 10px;font-size:13px;margin-bottom:8px;min-height:62px;box-sizing:border-box}
 
 .hidden-input{display:none}
 #print{display:none}
@@ -204,6 +206,15 @@ label.chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .pf .films figure{margin:0;text-align:center;font-size:8pt}
 .pf .films img{height:22mm;max-width:30mm;object-fit:contain;border:1px solid #bbb;background:#fff;display:block}
 .pf small{color:#555}
+.telas-tbl tr.grp td{background:#f1efea}
+.telas-tbl .sw{display:inline-block;width:11px;height:11px;border:1px solid #0005;border-radius:2px;vertical-align:-1px;margin-right:4px}
+.pf .tfilm{height:14mm;max-width:20mm;object-fit:contain;border:1px solid #bbb;background:#fff;display:block}
+.pf-zooms{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.pf-zooms figure{margin:0;border:1px solid #ccc;border-radius:6px;padding:6px}
+.pf-zooms figcaption{font-size:9pt;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.zoom{position:relative;aspect-ratio:1.6;overflow:hidden;border-radius:4px}
+.zoom>.mk{position:absolute}
+.zoom-cap{font-size:8.5pt;margin-top:3px}
 .pf .mk .lbl{font-size:8pt}
 </style>
 </head>
@@ -249,6 +260,10 @@ const TIPOS_TINTA = ["Plastisol", "À base d'água", "Discharge", "Puff", "Glitt
 const CATS = ["Etiqueta de marca", "Etiqueta de composição", "Tag", "Embalagem", "Brinde", "Outro"];
 const STATUS = ["Rascunho", "Aprovado", "Em produção", "Arquivado"];
 const LADOS = { frente: "Frente", costas: "Costas" };
+// onde a estampa vai (de quem veste). As mangas aparecem na foto de frente, onde a camiseta deitada mostra as duas.
+const LOCAIS = { frente: "Frente", costas: "Costas", mangaE: "Manga esquerda", mangaD: "Manga direita" };
+const ehManga = a => a.lado === "mangaE" || a.lado === "mangaD";
+const vistaDe = a => ehManga(a) ? "frente" : a.lado;
 
 /* ================= cor (sRGB ↔ CIE Lab, D65) ================= */
 function hex2rgb(h) {
@@ -362,6 +377,8 @@ function demoArt(text, w, h, colors) {
   return { img: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg), ar: h / w };
 }
 
+// mangas aproximadas da foto de exemplo: meio da costura da cava (o) → meio da barra (b)
+const SEED_MANGAS = { mEo: { x: 0.80, y: 0.30 }, mEb: { x: 0.93, y: 0.50 }, mDo: { x: 0.20, y: 0.30 }, mDb: { x: 0.07, y: 0.50 } };
 function seedState() {
   const blankId = uid();
   const ins = [
@@ -383,7 +400,7 @@ function seedState() {
       custo: 28, refTam: "M",
       tamanhos: [{ tam: "P", larg: 54, comp: 70 }, { tam: "M", larg: 57, comp: 72 }, { tam: "G", larg: 60, comp: 74 }, { tam: "GG", larg: 63, comp: 76 }],
       views: {
-        frente: { img: SEED_FRENTE, ar: 773 / 798, aprox: true, pts: { axL: { x: 0.225, y: 0.51 }, axR: { x: 0.775, y: 0.51 }, gola: { x: 0.5, y: 0.13 } } },
+        frente: { img: SEED_FRENTE, ar: 773 / 798, aprox: true, pts: { axL: { x: 0.225, y: 0.51 }, axR: { x: 0.775, y: 0.51 }, gola: { x: 0.5, y: 0.13 }, ...SEED_MANGAS } },
         costas: { img: SEED_COSTAS, ar: 1356 / 1400, aprox: true, pts: { axL: { x: 0.153, y: 0.462 }, axR: { x: 0.837, y: 0.462 }, gola: { x: 0.5, y: 0.047 } } },
       },
     }],
@@ -396,6 +413,8 @@ function seedState() {
         { id: uid(), nome: "Estampa costas", lado: "costas", ...back, wCm: 30, yCm: 9, offX: 0, baseBranca: true, flash: true, malha: "77 fios", cura: "160 °C · 90 s", obs: "",
           cores: [{ nome: "Branco", pantone: "White", hex: "#ffffff", tipo: "Plastisol" }, { nome: "Vermelho", pantone: "485 C", hex: "#c8372a", tipo: "Plastisol" }] },
         { id: uid(), nome: "Logo peito", lado: "frente", ...chest, wCm: 9, yCm: 8, offX: 0, baseBranca: false, flash: false, malha: "90 fios", cura: "160 °C · 90 s", obs: "",
+          cores: [{ nome: "Vermelho", pantone: "485 C", hex: "#c8372a", tipo: "Plastisol" }] },
+        { id: uid(), nome: "Logo manga", lado: "mangaE", ...chest, wCm: 7, yCm: 4, offX: 0, baseBranca: false, flash: false, malha: "90 fios", cura: "160 °C · 90 s", obs: "",
           cores: [{ nome: "Vermelho", pantone: "485 C", hex: "#c8372a", tipo: "Plastisol" }] },
       ],
       insumos: ins.slice(0, 4).map(i => ({ id: i.id, qtd: 1 })),
@@ -497,6 +516,8 @@ function loadState(s) {
   state = s;
   state.config = { ...seedState().config, ...state.config };
   state.tintas ??= []; state.formulas ??= [];
+  // fotos de exemplo salvas antes das mangas: ganham as mangas aproximadas
+  for (const b of state.blanks || []) { const v = b.views?.frente; if (v?.aprox && v.pts && !v.pts.mEo) Object.assign(v.pts, SEED_MANGAS); }
   ui.productId = state.products[0]?.id || null; ui.blankId = state.blanks[0]?.id || null; ui.selArt = null;
 }
 async function connectNew() {
@@ -578,14 +599,29 @@ function geo(b, v, tam) {
   const s = wU / ref.larg;
   return { s, kx: ref.larg / sz.larg, ky: ref.comp && sz.comp ? ref.comp / sz.comp : ref.larg / sz.larg, ar: v.ar, gx: P.gola.x, gy: P.gola.y * v.ar, sz };
 }
-function artBox(g, a) {
-  const w = a.wCm * g.s * g.kx, h = a.wCm * a.ar * g.s * g.kx;
-  const cx = g.gx + (a.offX || 0) * g.s * g.kx, top = g.gy + (a.yCm || 0) * g.s * g.ky;
+// eixo de uma manga na foto de frente: do centro da costura do ombro (o) ao centro da barra (b), em U
+function eixoManga(g, v, lado) {
+  const P = v?.pts, k = lado === "mangaE" ? "mE" : "mD", o = P?.[k + "o"], b = P?.[k + "b"];
+  if (!g || !o || !b) return null;
+  const ox = o.x, oy = o.y * v.ar, dx = b.x - ox, dy = b.y * v.ar - oy, L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L, uy = dy / L;
+  // n = lado de fora→dentro, na foto: perpendicular ao eixo
+  return { ox, oy, ux, uy, nx: -uy, ny: ux, ang: Math.atan2(uy, ux) * 180 / Math.PI - 90 };
+}
+function artBox(g, a, eixo) {
+  const k = g.s * g.kx, w = a.wCm * k, h = a.wCm * a.ar * k;
+  if (eixo) { // manga: desce pelo eixo a partir do ombro e gira com a manga
+    const along = (a.yCm || 0) * k + h / 2, lat = (a.offX || 0) * k;
+    const cx = eixo.ox + eixo.ux * along + eixo.nx * lat, cy = eixo.oy + eixo.uy * along + eixo.ny * lat;
+    return { l: (cx - w / 2) * 100, t: (cy - h / 2) / g.ar * 100, w: w * 100, h: h / g.ar * 100, rot: eixo.ang };
+  }
+  const cx = g.gx + (a.offX || 0) * k, top = g.gy + (a.yCm || 0) * g.s * g.ky;
   return { l: (cx - w / 2) * 100, t: top / g.ar * 100, w: w * 100, h: h / g.ar * 100 };
 }
-const boxStyle = b => `left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%`;
+const boxStyle = b => `left:${b.l}%;top:${b.t}%;width:${b.w}%;height:${b.h}%` + (b.rot ? `;transform:rotate(${b.rot}deg)` : "");
 function posText(a) {
   const x = r1(a.offX || 0);
+  if (ehManga(a)) return `${fmtCm(a.yCm || 0)} cm da costura da manga · ${x === 0 ? "centralizada na manga" : `${fmtCm(Math.abs(x))} cm fora do centro da manga`}`;
   return `${fmtCm(a.yCm || 0)} cm abaixo da gola · ${x === 0 ? "centralizada" : `${fmtCm(Math.abs(x))} cm à ${x > 0 ? "direita" : "esquerda"} do centro`}`;
 }
 const dimText = a => `${fmtCm(a.wCm)} × ${fmtCm(a.wCm * a.ar)} cm`;
@@ -601,11 +637,16 @@ function mockupHTML(p, lado, tam, o = {}) {
   if (o.guides) {
     h += `<div class="gl-v" style="left:${g.gx * 100}%"></div><div class="gl-dot" style="left:${g.gx * 100}%;top:${g.gy / g.ar * 100}%"></div>`;
     h += `<div class="scale" style="width:${10 * g.s * g.kx * 100}%"><span>10 cm</span></div>`;
+    if (lado === "frente") for (const m of ["mangaE", "mangaD"]) { const e = eixoManga(g, v, m); if (e) h += `<div class="gl-dot" style="left:${e.ox * 100}%;top:${e.oy / g.ar * 100}%"></div>`; }
   }
-  for (const a of p.estampas.filter(a => a.lado === lado)) {
-    const bx = artBox(g, a);
+  let semCalib = false;
+  for (const a of p.estampas.filter(a => vistaDe(a) === lado)) {
+    const eixo = ehManga(a) ? eixoManga(g, v, a.lado) : null;
+    if (ehManga(a) && !eixo) { semCalib = true; continue; }
+    const bx = artBox(g, a, eixo);
     h += `<div class="art ${o.interactive && a.id === ui.selArt ? "sel" : ""}" data-id="${a.id}" style="${boxStyle(bx)}"><img src="${a.img}" alt="">${o.labels ? `<span class="lbl">${dimText(a)}</span>` : ""}</div>`;
   }
+  if (semCalib) h += `<div class="mk-aviso">Estampa de manga: calibre as mangas na foto de frente em “Modelos de camiseta”.</div>`;
   return h + `</div>`;
 }
 
@@ -657,7 +698,7 @@ function renderProdutos() {
     <section class="content">${p ? editorHTML(p) : `<div class="empty">Nenhum produto. Clique em “+ Novo produto”.</div>`}</section>
   </div>`;
   renderList();
-  if (p) { drawMock(); renderCost(); }
+  if (p) { drawMock(); renderCost(); renderTelas(); }
 }
 function thumbOf(p) {
   const a = p.estampas.find(a => a.lado === "costas") || p.estampas[0];
@@ -693,7 +734,7 @@ function editorHTML(p) {
         <label class="chk"><input type="checkbox" id="guides" ${ui.guides ? "checked" : ""}> guias</label>
       </div>
       <div class="mockbox"><div id="mock"></div></div>
-      <div class="hint" style="margin-top:8px">Arraste a estampa para posicionar (setas do teclado movem 0,5 cm). A estampa tem o mesmo tamanho em cm em todos os tamanhos; troque o tamanho para ver como ela fica no P e no GG.</div>
+      <div class="hint" style="margin-top:8px">Arraste a estampa para posicionar (setas do teclado movem 0,5 cm). Estampas de manga aparecem na vista de frente e seguem o eixo da manga. A estampa tem o mesmo tamanho em cm em todos os tamanhos; troque o tamanho para ver como ela fica no P e no GG.</div>
       <div id="mockWarn"></div>
     </div>
     <div>
@@ -709,6 +750,9 @@ function editorHTML(p) {
       <div class="card"><h3>Estampas <span class="sp"></span><button class="btn sm" data-act="importPS" title="Arquivo gerado pelo script “Enviar para a ficha” no Photoshop">+ Do Photoshop</button><button class="btn sm" data-act="addArt">+ Adicionar arte</button></h3><div class="bd">
         ${p.estampas.map(a => artCardHTML(a)).join("") || `<div class="hint">Nenhuma estampa. Use “+ Adicionar arte” (PNG com fundo transparente é o ideal).</div>`}
       </div></div>
+
+      <div class="card"><h3>Telas do produto</h3><div class="bd"><div id="telasOut"></div>
+        <div class="hint" style="margin-top:4px">Uma tela por cor, na ordem de impressão de cada local. Para mudar a ordem, use ↑ ↓ nas cores da estampa.</div></div></div>
 
       <div class="card"><h3>Etiquetas e embalagem</h3><div class="bd">
         <table class="tbl"><thead><tr><th>Insumo</th><th style="width:70px">Qtd</th><th class="n" style="width:90px">Custo</th><th style="width:30px"></th></tr></thead><tbody>
@@ -741,19 +785,19 @@ function artCardHTML(a) {
   return `<div class="art-card ${sel ? "sel" : ""}">
     <div class="art-hd" data-act="selArt" data-id="${a.id}">
       <div class="th" style="background-image:url('${a.img.replace(/'/g, "%27")}')"></div>
-      <div class="grow"><div class="t">${esc(a.nome || "Estampa")} <span class="badge ${a.lado}">${LADOS[a.lado]}</span></div>
+      <div class="grow"><div class="t">${esc(a.nome || "Estampa")} <span class="badge ${a.lado}">${LOCAIS[a.lado]}</span></div>
         <div class="s" data-out="artsum:${a.id}">${artSum(a)}</div></div>
       <button class="x" data-act="delArt" data-id="${a.id}" title="Excluir estampa">×</button>
     </div>
     ${sel ? `<div class="art-bd">
       <div class="fg c3">
         <label class="f"><span>Nome</span><input data-s="${s}" data-k="nome" value="${esc(a.nome)}"></label>
-        <label class="f"><span>Lado</span><select data-s="${s}" data-k="lado" data-rerender="1">${Object.entries(LADOS).map(([k, l]) => `<option value="${k}" ${k === a.lado ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label class="f"><span>Local</span><select data-s="${s}" data-k="lado" data-rerender="1">${Object.entries(LOCAIS).map(([k, l]) => `<option value="${k}" ${k === a.lado ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         <label class="f"><span>&nbsp;</span><button class="btn" data-act="swapArt" data-id="${a.id}">Trocar arte…</button></label>
         <label class="f"><span>Largura (cm)</span><input type="number" step="0.1" min="0.5" data-s="${s}" data-k="wCm" value="${r1(a.wCm)}"></label>
         <label class="f"><span>Altura (cm)</span><input type="number" step="0.1" min="0.5" data-s="${s}" data-k="hCm" value="${r1(a.wCm * a.ar)}"></label>
-        <label class="f"><span>Abaixo da gola (cm)</span><input type="number" step="0.1" data-s="${s}" data-k="yCm" value="${r1(a.yCm)}"></label>
-        <label class="f"><span>Do centro (cm, + = dir.)</span><input type="number" step="0.1" data-s="${s}" data-k="offX" value="${r1(a.offX)}"></label>
+        <label class="f"><span>${ehManga(a) ? "Da costura da manga (cm)" : "Abaixo da gola (cm)"}</span><input type="number" step="0.1" data-s="${s}" data-k="yCm" value="${r1(a.yCm)}"></label>
+        <label class="f"><span>${ehManga(a) ? "Do centro da manga (cm)" : "Do centro (cm, + = dir.)"}</span><input type="number" step="0.1" data-s="${s}" data-k="offX" value="${r1(a.offX)}"></label>
         <label class="f"><span>&nbsp;</span><button class="btn" data-act="center" data-id="${a.id}">Centralizar</button></label>
       </div>
       <div>
@@ -832,7 +876,48 @@ function syncForm() {
     if (t === "pins") { const pi = cur()?.insumos[+a]; const it = pi && insumoOf(pi.id); el.textContent = brl(it ? it.custo * pi.qtd : 0); }
   });
 }
-function refreshProduct() { renderList(); drawMock(); renderCost(); syncForm(); }
+function refreshProduct() { renderList(); drawMock(); renderCost(); renderTelas(); syncForm(); }
+
+/* ---------- telas do produto: uma tela = uma cor ---------- */
+const ORDEM_LOCAIS = ["frente", "costas", "mangaE", "mangaD"];
+function telasDoProduto(p) {
+  const arts = [...p.estampas].sort((x, y) => ORDEM_LOCAIS.indexOf(x.lado) - ORDEM_LOCAIS.indexOf(y.lado));
+  const out = []; let n = 0;
+  for (const a of arts) {
+    if (a.baseBranca) out.push({ n: ++n, a, base: true, ord: 0, nome: "Base branca", hex: "#ffffff", tipo: "Base", pantone: "", film: a.baseFilm });
+    a.cores.forEach((c, i) => out.push({ n: ++n, a, base: false, ord: i + 1, i, nome: c.nome || `Cor ${i + 1}`, hex: c.hex, tipo: c.tipo, pantone: c.pantone, formula: formulaOf(c.formulaId), film: c.film }));
+  }
+  return out;
+}
+// a mesma tinta usada em mais de uma tela é preparada uma vez só
+function tintasDoProduto(telas) {
+  const m = new Map();
+  for (const t of telas) {
+    const k = t.base ? "base" : t.formula ? "f:" + t.formula.id : "c:" + (t.nome || "").trim().toLowerCase() + "|" + (t.pantone || "").trim().toLowerCase();
+    if (!m.has(k)) m.set(k, { ...t, telas: [] });
+    m.get(k).telas.push(t);
+  }
+  return [...m.values()];
+}
+function telasTabelaHTML(p, print) {
+  const telas = telasDoProduto(p);
+  if (!telas.length) return print ? "<p>Sem telas.</p>" : `<div class="hint">Sem cores ainda. Adicione cores nas estampas.</div>`;
+  const tintas = tintasDoProduto(telas), gr = gramasCor(p);
+  const grupos = ORDEM_LOCAIS.filter(l => telas.some(t => t.a.lado === l));
+  return `<table class="${print ? "" : "tbl"} telas-tbl"><thead><tr><th style="width:44px">Tela</th><th>Cor</th><th>Tinta</th><th>Malha</th>${print ? "<th>Fotolito</th><th style='width:60px'>OK</th>" : ""}</tr></thead><tbody>
+    ${grupos.map(l => {
+      const ts = telas.filter(t => t.a.lado === l);
+      return `<tr class="grp"><td colspan="${print ? 6 : 4}"><b>${LOCAIS[l]}</b> · ${[...new Set(ts.map(t => t.a.nome))].map(esc).join(", ")} · ${ts.length} ${ts.length === 1 ? "tela" : "telas"}</td></tr>` +
+        ts.map(t => `<tr><td><b>T${t.n}</b><br><small>${t.base ? "base" : t.ord + "ª cor"}</small></td>
+          <td><span class="sw" style="background:${esc(t.hex)}"></span>${esc(t.nome)}${t.pantone ? `<br><small>Pantone ${esc(t.pantone)}</small>` : ""}</td>
+          <td>${esc(t.tipo || "—")}${t.formula ? `<br><small>${esc(t.formula.nome)}</small>` : ""}</td>
+          <td>${esc(t.a.malha || "—")}</td>
+          ${print ? `<td>${t.film ? `<img class="tfilm" src="${t.film}" alt="">` : "—"}</td><td></td>` : ""}</tr>`).join("");
+    }).join("")}
+    </tbody></table>
+    <div class="${print ? "" : "hint"}" style="margin-top:6px;font-size:${print ? "9pt" : "12px"}"><b>${telas.length} telas</b> · ${tintas.length} ${tintas.length === 1 ? "tinta" : "tintas"} para preparar (≈ ${Math.round(gr)} g por tela)${tintas.some(x => x.telas.length > 1) ? ": " + tintas.filter(x => x.telas.length > 1).map(x => `${esc(x.nome)} serve ${x.telas.map(t => "T" + t.n).join(", ").replace(/, (?=[^,]*$)/, " e ")}`).join("; ") : ""}.</div>`;
+}
+function renderTelas() { const el = $("#telasOut"), p = cur(); if (el && p) el.innerHTML = telasTabelaHTML(p, false); }
 
 /* ---------- modelos ---------- */
 function renderModelos() {
@@ -875,26 +960,37 @@ function blankHTML(b) {
     <div>
       <div class="card"><h3>Fotos e calibração</h3><div class="bd">
         <div class="views">${Object.keys(LADOS).map(l => viewHTML(b, l)).join("")}</div>
-        <div class="hint" style="margin-top:10px"><b>Foto ideal:</b> a sua camiseta lisa esticada numa mesa, celular paralelo à mesa (de cima), luz uniforme, sem dobras. Calibrar = clicar em 3 pontos: axila esquerda, axila direita e o centro da costura da gola (o ponto de onde você mede a altura da estampa).</div>
+        <div class="hint" style="margin-top:10px"><b>Foto ideal:</b> a sua camiseta lisa esticada numa mesa, celular paralelo à mesa (de cima), luz uniforme, sem dobras, mangas abertas. Calibrar = clicar em 3 pontos: axila esquerda, axila direita e o centro da costura da gola (o ponto de onde você mede a altura da estampa). <b>Mangas</b> (na foto de frente): para cada manga, o meio da costura onde ela começa e o meio da barra; a estampa de manga segue esse eixo.</div>
       </div></div>
     </div>
   </div>`;
 }
 const CALIB = [["axL", "axila ESQUERDA (onde a manga encontra o corpo)"], ["axR", "axila DIREITA"], ["gola", "CENTRO DA COSTURA DA GOLA (ponto de onde você mede a estampa)"]];
+const CALIB_MANGA = [
+  ["mEo", "manga à DIREITA da foto (esquerda de quem veste): MEIO DA COSTURA onde a manga começa"],
+  ["mEb", "mesma manga: MEIO DA BARRA (ponta da manga)"],
+  ["mDo", "manga à ESQUERDA da foto (direita de quem veste): MEIO DA COSTURA onde a manga começa"],
+  ["mDb", "mesma manga: MEIO DA BARRA"]];
+const PT_NOME = { axL: "axila E", axR: "axila D", gola: "gola", mEo: "manga E", mEb: "barra E", mDo: "manga D", mDb: "barra D" };
+const calibLista = c => c.modo === "manga" ? CALIB_MANGA : CALIB;
 function viewHTML(b, lado) {
   const v = b.views[lado] || {};
   const c = ui.calib && ui.calib.blankId === b.id && ui.calib.lado === lado ? ui.calib : null;
-  const pts = c ? c.pts : v.pts || {};
+  const pts = c ? (c.modo === "manga" ? { ...v.pts, ...c.pts } : c.pts) : v.pts || {};
   const g = geo(b, v, b.refTam);
-  const ptsHTML = Object.entries(pts).map(([k, p]) => `<div class="pt" style="left:${p.x * 100}%;top:${p.y * 100}%"><span ${p.x > 0.7 ? `style="left:auto;right:16px"` : ""}>${{ axL: "axila E", axR: "axila D", gola: "gola" }[k]}</span></div>`).join("");
+  const ptsHTML = Object.entries(pts).map(([k, p]) => `<div class="pt" style="left:${p.x * 100}%;top:${p.y * 100}%"><span ${p.x > 0.7 ? `style="left:auto;right:16px"` : ""}>${PT_NOME[k] || k}</span></div>`).join("");
+  const temMangas = !!(v.pts?.mEo && v.pts?.mDo);
   const status = !v.img ? "" : c ? "" : !g ? `<div class="banner">Ainda não calibrada.</div>`
     : v.aprox ? `<div class="banner">Calibração aproximada (exemplo). Recalibre com a sua foto.</div>`
-    : `<div class="banner ok">Calibrada · largura ${esc(b.refTam)} = ${fmtCm(sizes(b).ref.larg)} cm entre as axilas</div>`;
+    : `<div class="banner ok">Calibrada · largura ${esc(b.refTam)} = ${fmtCm(sizes(b).ref.larg)} cm entre as axilas${lado === "frente" ? (temMangas ? " · mangas calibradas" : " · mangas ainda não") : ""}</div>`;
+  const lista = c ? calibLista(c) : null;
   return `<div class="vcard ${c ? "calib" : ""}">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><b style="flex:1">${LADOS[lado]}</b>
       <button class="btn sm" data-act="viewImg" data-lado="${lado}">${v.img ? "Trocar foto" : "Carregar foto"}</button>
-      ${v.img ? `<button class="btn sm ${c ? "" : "acc"}" data-act="${c ? "calibCancel" : "calib"}" data-lado="${lado}">${c ? "Cancelar" : "Calibrar"}</button>` : ""}</div>
-    ${c ? `<div class="calib-msg">${c.step + 1}/3 · Clique na ${CALIB[c.step][1]}</div>` : ""}
+      ${v.img && !c ? `<button class="btn sm acc" data-act="calib" data-lado="${lado}">Calibrar</button>` : ""}
+      ${v.img && !c && lado === "frente" && g ? `<button class="btn sm ${temMangas && !v.aprox ? "" : "acc"}" data-act="calibManga" data-lado="${lado}">Calibrar mangas</button>` : ""}
+      ${c ? `<button class="btn sm" data-act="calibCancel" data-lado="${lado}">Cancelar</button>` : ""}</div>
+    ${c ? `<div class="calib-msg">${c.step + 1}/${lista.length} · Clique: ${lista[c.step][1]}</div>` : ""}
     ${v.img ? `<div class="mk" data-calib="${lado}"><img class="shirt" src="${v.img}" alt="">${ptsHTML}</div>` : `<div class="ph-box">Sem foto da ${LADOS[lado].toLowerCase()}</div>`}
     ${status}
   </div>`;
@@ -1134,10 +1230,13 @@ function fichaHTML(p, withCosts) {
   return `<div class="pf">
     <div class="pf-hd"><div><div class="code">${esc(p.codigo || "")}</div><h1>${esc(p.nome)}</h1><div style="font-size:9.5pt;color:#444">${esc(p.colecao || "")}</div></div>
       <div class="meta"><b>${esc(c.loja)}</b><br>Ficha técnica · ${esc(p.status)}<br>Impressa em ${today()}</div></div>
-    <div class="pf-mocks">${Object.entries(LADOS).map(([l, n]) => `<figure><figcaption>${n}${ref ? ` · camiseta ${esc(ref)}` : ""}</figcaption>${mockupHTML(p, l, ref, { guides: true, labels: true })}</figure>`).join("")}</div>
+    <div class="pf-mocks">${Object.entries(LADOS).map(([l, n]) => `<figure><figcaption>${n}${l === "frente" && arts.some(ehManga) ? " e mangas" : ""}${ref ? ` · camiseta ${esc(ref)}` : ""}</figcaption>${mockupHTML(p, l, ref, { guides: true, labels: true })}</figure>`).join("")}</div>
+    ${arts.some(ehManga) ? `<div class="pf-zooms">${arts.filter(ehManga).map(a => `<figure><figcaption>${LOCAIS[a.lado]} · detalhe</figcaption>${mangaZoomHTML(p, a, ref)}<div class="zoom-cap">${esc(a.nome)} · ${dimText(a)} · ${posText(a)}</div></figure>`).join("")}</div>` : ""}
+    <h2>Telas e cores · ordem de impressão</h2>
+    ${telasTabelaHTML(p, true)}
     <h2>Estampas</h2>
     ${arts.map(a => `<div class="art-blk"><table>
-      <tr><th style="width:22%">${esc(a.nome)}</th><th colspan="3">${LADOS[a.lado]}</th></tr>
+      <tr><th style="width:22%">${esc(a.nome)}</th><th colspan="3">${LOCAIS[a.lado]}</th></tr>
       <tr><td>Tamanho da arte</td><td><b>${dimText(a)}</b></td><td>Posição</td><td><b>${posText(a)}</b></td></tr>
       <tr><td>Telas</td><td>${a.cores.length + (a.baseBranca ? 1 : 0)}${a.baseBranca ? " (inclui base branca)" : ""}</td><td>Malha · cura</td><td>${esc(a.malha || "—")} · ${esc(a.cura || "—")}${a.flash ? " · flash entre cores" : ""}</td></tr>
       <tr><td>Ordem das cores</td><td colspan="3">${a.baseBranca ? "0. Base branca → " : ""}${a.cores.map((x, i) => `${i + 1}. <span class="sw" style="background:${esc(x.hex)}"></span>${esc(x.nome)}${x.pantone ? ` (Pantone ${esc(x.pantone)})` : ""} – ${esc(x.tipo)}`).join(" → ") || "—"}</td></tr>
@@ -1163,6 +1262,18 @@ function fichaHTML(p, withCosts) {
   </div>`;
 }
 
+// recorte ampliado da foto de frente em volta de uma estampa de manga
+function mangaZoomHTML(p, a, tam) {
+  const b = blankOf(p), v = b?.views.frente, g = b && geo(b, v, tam), e = g && eixoManga(g, v, a.lado);
+  if (!e) return `<div class="ph-box">Mangas não calibradas.</div>`;
+  const bx = artBox(g, a, e);
+  const cx = (bx.l + bx.w / 2) / 100, cy = (bx.t + bx.h / 2) / 100; // frações da foto
+  const R = 1.6; // largura ÷ altura do recorte
+  // a estampa ocupa ~40% da largura ou ~55% da altura do recorte
+  const Z = Math.max(1.6, Math.min(3.2, 0.3 / (bx.w / 100), 0.45 / (bx.h / 100 * g.ar * R)));
+  const left = (0.5 - cx * Z) * 100, top = (0.5 - cy * Z * g.ar * R) * 100;
+  return `<div class="zoom"><div style="position:absolute;width:${Z * 100}%;left:${left}%;top:${top}%">${mockupHTML(p, "frente", tam, { labels: false })}</div></div>`;
+}
 function preparoHTML(p) {
   const rows = [];
   p.estampas.forEach(a => a.cores.forEach(x => { const f = formulaOf(x.formulaId); if (f) rows.push({ a, x, f }); }));
@@ -1316,6 +1427,7 @@ document.addEventListener("click", async e => {
       } catch (er) { alert(er.message); }
     }); return;
     case "calib": ui.calib = { blankId: b.id, lado: el.dataset.lado, step: 0, pts: {} }; return render();
+    case "calibManga": ui.calib = { blankId: b.id, lado: el.dataset.lado, step: 0, pts: {}, modo: "manga" }; return render();
     case "calibCancel": ui.calib = null; return render();
     case "newIns": state.insumos.push({ id: uid(), nome: "Novo insumo", categoria: "Outro", custo: 0, fornecedor: "" }); save(); return render();
     case "delIns": {
@@ -1332,11 +1444,14 @@ document.addEventListener("click", e => {
   if (!mk || !ui.calib || mk.dataset.calib !== ui.calib.lado) return;
   const r = mk.getBoundingClientRect();
   const c = ui.calib;
-  c.pts[CALIB[c.step][0]] = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+  const lista = calibLista(c);
+  c.pts[lista[c.step][0]] = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   c.step++;
-  if (c.step >= CALIB.length) {
+  if (c.step >= lista.length) {
     const v = state.blanks.find(x => x.id === c.blankId).views[c.lado];
-    v.pts = c.pts; v.aprox = false; ui.calib = null; save();
+    if (c.modo === "manga") v.pts = { ...v.pts, ...c.pts };
+    else { const m = {}; for (const k of ["mEo", "mEb", "mDo", "mDb"]) if (v.pts?.[k] && !v.aprox) m[k] = v.pts[k]; v.pts = { ...c.pts, ...m }; v.aprox = false; }
+    ui.calib = null; save();
   }
   render();
 });
@@ -1367,6 +1482,12 @@ document.addEventListener("input", e => {
   setF(o, el.dataset.k, v);
   const t = el.dataset.s.split(":")[0];
   // escolher a fórmula traz a cor medida e o tipo de tinta dela
+  // mudou o local: mostra a vista certa e ajusta o tamanho padrão de manga
+  if (t === "art" && el.dataset.k === "lado") {
+    if (ehManga(o) && o.wCm > 12) { o.wCm = 8; o.yCm = 4; o.offX = 0; }
+    else if (!ehManga(o) && o.wCm <= 12 && o.yCm < 6) { o.yCm = 8; o.offX = 0; }
+    ui.lado = vistaDe(o);
+  }
   if (t === "cor" && el.dataset.k === "formulaId" && v) {
     const f = formulaOf(v);
     if (f) { o.hex = lab2hex(f); if (TIPOS_TINTA.includes(f.tipo)) o.tipo = f.tipo; }
@@ -1397,6 +1518,7 @@ document.addEventListener("pointerdown", e => {
   e.preventDefault();
   const p = cur(), a = p.estampas.find(x => x.id === artEl.dataset.id);
   const b = blankOf(p), g = geo(b, b.views[ui.lado], ui.tam);
+  const eixo = ehManga(a) ? eixoManga(g, b.views[ui.lado], a.lado) : null;
   const mk = artEl.parentElement, rect = mk.getBoundingClientRect();
   const st = { x: e.clientX, y: e.clientY, offX: a.offX || 0, yCm: a.yCm || 0 };
   const wasSel = ui.selArt === a.id;
@@ -1407,10 +1529,16 @@ document.addEventListener("pointerdown", e => {
   const move = ev => {
     const dx = (ev.clientX - st.x) / rect.width, dy = (ev.clientY - st.y) / rect.width;
     if (Math.abs(ev.clientX - st.x) + Math.abs(ev.clientY - st.y) > 2) moved = true;
-    let ox = r1(st.offX + dx / (g.s * g.kx));
-    if (Math.abs(ox) < 0.8) ox = 0;
-    a.offX = ox; a.yCm = Math.max(0, r1(st.yCm + dy / (g.s * g.ky)));
-    artEl.setAttribute("style", boxStyle(artBox(g, a)));
+    if (eixo) { // manga: o movimento é medido ao longo do eixo da manga e de través
+      const k = g.s * g.kx, along = dx * eixo.ux + dy * eixo.uy, lat = dx * eixo.nx + dy * eixo.ny;
+      let ox = r1(st.offX + lat / k); if (Math.abs(ox) < 0.5) ox = 0;
+      a.offX = ox; a.yCm = Math.max(0, r1(st.yCm + along / k));
+    } else {
+      let ox = r1(st.offX + dx / (g.s * g.kx));
+      if (Math.abs(ox) < 0.8) ox = 0;
+      a.offX = ox; a.yCm = Math.max(0, r1(st.yCm + dy / (g.s * g.ky)));
+    }
+    artEl.setAttribute("style", boxStyle(artBox(g, a, eixo)));
     syncForm();
   };
   const up = () => {
@@ -1422,7 +1550,7 @@ document.addEventListener("pointerdown", e => {
 });
 document.addEventListener("keydown", e => {
   if (ui.tab !== "produtos" || !ui.selArt || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) return;
-  const a = target("art:" + ui.selArt); if (!a || a.lado !== ui.lado) return;
+  const a = target("art:" + ui.selArt); if (!a || vistaDe(a) !== ui.lado) return;
   const d = { ArrowLeft: [-0.5, 0], ArrowRight: [0.5, 0], ArrowUp: [0, -0.5], ArrowDown: [0, 0.5] }[e.key];
   if (!d) return;
   e.preventDefault();
